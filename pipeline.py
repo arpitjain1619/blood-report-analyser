@@ -1,7 +1,6 @@
 import base64
 import os
 import json
-import time
 from dotenv import load_dotenv
 from openai import OpenAI
 from categorize import categorize

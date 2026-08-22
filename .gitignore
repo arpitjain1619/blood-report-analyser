@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 vector_store.json
 sample_report_base64.txt
+uploads/

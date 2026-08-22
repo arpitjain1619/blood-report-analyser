@@ -35,6 +35,7 @@ rate-limit resilience, multi-model fallback, and mock-mode testing.
 - [Resilience: Retries & Multi-Model Fallback](#resilience-retries--multi-model-fallback)
 - [Mock Mode](#mock-mode)
 - [API Reference](#api-reference)
+- [MCP Server & ChatGPT Integration](#mcp-server--chatgpt-integration)
 - [File-by-File Reference](#file-by-file-reference)
 - [Extending the Knowledge Base](#extending-the-knowledge-base)
 - [Roadmap](#roadmap)
@@ -176,12 +177,16 @@ engineering, rather than depending on a single high-level framework:
 | Vision-language model | `google/gemma-4-31b-it:free` (+ fallback models) |
 | Embedding model | `nvidia/llama-nemotron-embed-vl-1b-v2:free` |
 | Vector store | Local JSON file (`vector_store.json`) — no external vector DB |
+| MCP server | [FastMCP](https://github.com/jlowin/fastmcp), mounted into the FastAPI app; exposes an `analyze_blood_report` tool to MCP-compatible clients (e.g. ChatGPT) |
+| Tunneling (dev) | [ngrok](https://ngrok.com) — exposes the local API/MCP server over a public HTTPS URL for remote clients |
 
 ## Project Structure
 
 ```
 blood-report-analyser/
-├── main.py                 # FastAPI app + /analyze-report endpoint
+├── main.py                 # FastAPI app: /analyze-report, /upload, mounts MCP at /mcp
+├── mcp_server/
+│   └── server.py            # FastMCP server: analyze_blood_report tool
 ├── pipeline.py              # Orchestrates the full pipeline (image → advice)
 ├── categorize.py            # Rule-based High/Low/Normal categorization
 ├── reference_ranges.py      # Biomarker normal-range reference chart
@@ -193,6 +198,7 @@ blood-report-analyser/
 ├── advisor.py                   # Generates grounded advice using RAG
 ├── mock_data.py                  # Canned biomarkers/advice for MOCK_AI mode
 ├── articles/                      # RAG knowledge base (biomarker guidance)
+├── uploads/                        # Images uploaded via /upload (gitignored)
 ├── vector_store.json              # Generated embeddings (gitignored)
 ├── sample_report.png              # Synthetic sample report for testing
 └── playground.py                   # Scratch file for exploring concepts
@@ -204,7 +210,7 @@ blood-report-analyser/
 python3 -m venv venv
 source venv/bin/activate      # on Windows: venv\Scripts\activate
 
-pip install fastapi uvicorn openai python-dotenv numpy pillow
+pip install fastapi uvicorn openai python-dotenv numpy pillow fastmcp httpx
 ```
 
 Create a `.env` file in the repo root:
@@ -212,6 +218,7 @@ Create a `.env` file in the repo root:
 ```bash
 OPENROUTER_API_KEY=your-openrouter-key-here
 MOCK_AI=false
+BACKEND_API_URL=http://127.0.0.1:8001
 ```
 
 - `OPENROUTER_API_KEY` — API key for [OpenRouter](https://openrouter.ai),
@@ -221,6 +228,10 @@ MOCK_AI=false
   `OpenAI` client, just pointed at OpenRouter's `base_url`.
 - `MOCK_AI` — when `true`, skips all real model calls and returns canned
   data. See [Mock Mode](#mock-mode).
+- `BACKEND_API_URL` — base URL the MCP server resolves relative
+  `/uploads/...` image paths against (see
+  [MCP Server & ChatGPT Integration](#mcp-server--chatgpt-integration)).
+  Defaults to `http://127.0.0.1:8001`.
 
 Before running the pipeline for the first time, build the RAG vector store
 (one-time — only needs re-running if you edit/add articles):
@@ -235,8 +246,13 @@ writes the result to `vector_store.json` (gitignored — regenerate locally).
 ## Running the API
 
 ```bash
-uvicorn main:app --reload --port 8005
+uvicorn main:app --reload --port 8001
 ```
+
+This single process serves the REST API (`/analyze-report`, `/upload`),
+the uploaded-image static files (`/uploads/...`), and the MCP server
+(`/mcp`) — see [MCP Server & ChatGPT Integration](#mcp-server--chatgpt-integration)
+for wiring this up to a remote client like ChatGPT.
 
 You can also run the pipeline directly from the command line without the API
 layer at all:
@@ -465,11 +481,100 @@ CORS is currently wide open (`allow_origins=["*"]`) for local development —
 this should be restricted to the actual consuming origin(s) before any
 real deployment.
 
+### `POST /upload`
+
+Accepts a `multipart/form-data` upload with a single field, `file`, that
+must be an image. Unlike `/analyze-report`, this endpoint does not run the
+pipeline — it just saves the file to `uploads/` under a generated UUID
+filename and returns a URL to it:
+
+```json
+{ "url": "/uploads/0cd76a6d-534d-4919-a4aa-27f6b85fe947.png" }
+```
+
+This exists so a client can hand the MCP server a stable, fetchable
+**URL** for an image (see below), rather than passing raw image bytes
+through the tool call.
+
+## MCP Server & ChatGPT Integration
+
+**File:** [mcp_server/server.py](mcp_server/server.py)
+
+The pipeline is also exposed as a tool over the **Model Context Protocol
+(MCP)**, using [FastMCP](https://github.com/jlowin/fastmcp), so any
+MCP-compatible client — ChatGPT, Claude, or otherwise — can call it directly
+as a tool during a conversation, instead of a human hitting the REST API.
+
+```python
+@mcp.tool
+def analyze_blood_report(image_url: str) -> dict:
+    ...
+```
+
+The tool takes an `image_url` rather than raw base64 bytes, since that's
+the shape most MCP/agent clients pass a "here's an image" argument in. A
+relative `/uploads/...` path is resolved against `BACKEND_API_URL`; the
+image is then fetched with `httpx`, run through the exact same
+`analyze_report()` pipeline used by `/analyze-report`, and the categorized
+biomarkers + advice are returned as the tool result.
+
+Rather than running as a standalone process, the FastMCP app is mounted
+directly into the main FastAPI app in [main.py](main.py):
+
+```python
+mcp_app = mcp_server_instance.http_app(path="/")
+app = FastAPI(title="Blood Report Analyser API", lifespan=mcp_app.lifespan)
+app.mount("/mcp", mcp_app)
+```
+
+This keeps everything — the REST API, the uploaded-image static files, and
+the MCP endpoint — behind a single port/process, so exposing the app
+externally only requires one tunnel.
+
+### Exposing it to a remote client (ChatGPT) via ngrok
+
+ChatGPT's connector/tool setup needs a **public HTTPS URL**, both for the
+MCP endpoint itself and for any image the tool is asked to fetch (a
+`localhost` URL means nothing to ChatGPT's servers). For local development,
+[ngrok](https://ngrok.com) bridges that gap by tunneling a public URL to the
+local server:
+
+```bash
+uvicorn main:app --reload --port 8001
+ngrok http 8001
+```
+
+ngrok prints a public forwarding URL, e.g.
+`https://grievance-flatware-contently.ngrok-free.dev -> http://localhost:8001`
+(a free ngrok URL like this is randomly generated per session and changes
+every time the tunnel restarts). That URL is then registered as the
+connector's MCP server URL in ChatGPT
+(`https://<ngrok-subdomain>.ngrok-free.dev/mcp`).
+
+End-to-end flow once connected:
+
+1. Upload a report image via `POST /upload` (through the ngrok URL) to get
+   back a public, fetchable image URL.
+2. In a ChatGPT conversation, ask it to analyze the report at that URL.
+   ChatGPT calls `analyze_blood_report(image_url=...)` on the connected
+   MCP server.
+3. The server fetches the image, runs the full pipeline, and returns the
+   categorized biomarkers + advice — which ChatGPT then renders as a
+   conversational answer.
+
+This was verified working live: pointing ChatGPT at an uploaded report
+through the ngrok tunnel returned a full categorized biomarker table (e.g.
+Hemoglobin 10.6 g/dL — Low, WBC 13.8 ×10³/µL — High, Platelets 128 ×10³/µL —
+Low) plus grounded, non-diagnostic guidance ending in a doctor-consult
+recommendation — with the response correctly surfacing that it came from
+`MOCK_AI` test-mode data.
+
 ## File-by-File Reference
 
 | File | Role |
 |---|---|
-| [main.py](main.py) | FastAPI app, CORS config, `/analyze-report` endpoint |
+| [main.py](main.py) | FastAPI app, CORS config, `/analyze-report` + `/upload` endpoints, mounts MCP at `/mcp` |
+| [mcp_server/server.py](mcp_server/server.py) | FastMCP server exposing `analyze_blood_report` as an MCP tool |
 | [pipeline.py](pipeline.py) | `analyze_report()` orchestrator; vision extraction + model fallback list |
 | [categorize.py](categorize.py) | Rule-based High/Low/Normal comparison |
 | [reference_ranges.py](reference_ranges.py) | Biomarker → {min, max, unit} table |
@@ -481,6 +586,7 @@ real deployment.
 | [advisor.py](advisor.py) | RAG prompt assembly + grounded advice generation, with model fallback |
 | [mock_data.py](mock_data.py) | Canned biomarkers/advice for `MOCK_AI=true` |
 | [articles/](articles/) | The RAG knowledge base — 14 biomarker/condition guidance articles |
+| [uploads/](uploads/) | Images saved via `/upload`, for handing MCP clients a fetchable URL (gitignored) |
 | [sample_report.png](sample_report.png) | Synthetic sample report image for manual testing |
 | [playground.py](playground.py) | Scratch file for exploring snippets outside the main pipeline |
 
@@ -504,7 +610,11 @@ To add coverage for a new biomarker or condition:
 - [x] RAG knowledge base (chunking, embeddings, retrieval, generation)
 - [x] Rate-limit resilience (retry + multi-model fallback)
 - [x] FastAPI service wrapping the pipeline
+- [x] MCP server exposing the pipeline as a tool (`analyze_blood_report`),
+      verified working end-to-end with ChatGPT via an ngrok tunnel
 - [ ] Restrict CORS to actual consuming origin(s) before any deployment
+- [ ] Deploy the API/MCP server behind a stable public URL instead of an
+      ephemeral ngrok tunnel
 - [ ] Incremental vector-store updates (currently a full rebuild per run)
 - [ ] Swap the flat JSON vector store + linear cosine scan for a real
       vector database once the knowledge base grows meaningfully past a

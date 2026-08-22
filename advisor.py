@@ -2,7 +2,7 @@ import os
 import time
 from dotenv import load_dotenv
 from openai import OpenAI
-from retriever import load_vector_store, retrieve_relevant_chunks
+from retriever import retrieve_relevant_chunks
 
 load_dotenv()
 
