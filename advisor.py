@@ -1,20 +1,18 @@
 import os
 import time
 from dotenv import load_dotenv
-from openai import OpenAI
+from anthropic import Anthropic
 from retriever import retrieve_relevant_chunks
 
 load_dotenv()
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
+client = Anthropic(
+    api_key=os.getenv("ANTHROPIC_API_KEY"),
 )
 
 TEXT_MODELS = [
-    "google/gemma-4-31b-it:free",
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-    "google/gemma-4-26b-a4b-it:free",
+    "claude-sonnet-4-5",
+    "claude-haiku-4-5",
 ]
 
 def call_model_with_fallback(prompt: str, max_retries_per_model: int = 2) -> str:
@@ -23,11 +21,12 @@ def call_model_with_fallback(prompt: str, max_retries_per_model: int = 2) -> str
         for attempt in range(1, max_retries_per_model + 1):
             try:
                 print(f"Trying model: {model} (attempt {attempt})...")
-                response = client.chat.completions.create(
+                response = client.messages.create(
                     model=model,
+                    max_tokens=1024,
                     messages=[{"role": "user", "content": prompt}],
                 )
-                return response.choices[0].message.content
+                return response.content[0].text
             except Exception as e:
                 last_error = e
                 wait_time = attempt * 5

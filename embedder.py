@@ -1,13 +1,12 @@
 import os
 import time
 from dotenv import load_dotenv
-from openai import OpenAI
+from google import genai
 
 load_dotenv()
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
+gemini_client = genai.Client(
+    api_key=os.getenv("GEMINI_API_KEY"),
 )
 
 def embed_text(text: str, max_retries: int = 3) -> list:
@@ -16,12 +15,11 @@ def embed_text(text: str, max_retries: int = 3) -> list:
     """
     for attempt in range(1, max_retries + 1):
         try:
-            response = client.embeddings.create(
-                model="nvidia/llama-nemotron-embed-vl-1b-v2:free",
-                input=text,
-                encoding_format="float",
+            response = gemini_client.models.embed_content(
+                model="gemini-embedding-2-preview",
+                contents=text,
             )
-            return response.data[0].embedding
+            return response.embeddings[0].values
         except Exception as e:
             if attempt == max_retries:
                 raise

@@ -2,24 +2,22 @@ import base64
 import os
 import json
 from dotenv import load_dotenv
-from openai import OpenAI
+from anthropic import Anthropic
 from categorize import categorize
 from retriever import load_vector_store
 from advisor import generate_advice
 
 load_dotenv()
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
+client = Anthropic(
+    api_key=os.getenv("ANTHROPIC_API_KEY"),
 )
 
 MOCK_AI = os.getenv("MOCK_AI", "false").lower() == "true"
 
 VISION_MODELS = [
-    "google/gemma-4-31b-it:free",
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-    "google/gemma-4-26b-a4b-it:free",
+    "claude-sonnet-4-5",
+    "claude-haiku-4-5",
 ]
 
 
@@ -47,25 +45,33 @@ Use the exact biomarker names as they appear in the report. Only include the val
         for attempt in range(1, max_retries_per_model + 1):
             try:
                 print(f"Trying model: {model} (attempt {attempt})...")
-                response = client.chat.completions.create(
+                response = client.messages.create(
                     model=model,
+                    max_tokens=1024,
                     messages=[
                         {
                             "role": "user",
                             "content": [
                                 {"type": "text", "text": prompt_text},
-                                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}
-                            ]
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": "image/png",
+                                        "data": base64_image,
+                                    },
+                                },
+                            ],
                         }
                     ],
-                    timeout=30,  # fail fast instead of hanging indefinitely
+                    timeout=30,
                 )
 
                 # Defensive check: don't assume the response is well-formed
-                if not response.choices or not response.choices[0].message.content:
+                if not response.content or not response.content[0].text:
                     raise ValueError(f"Model {model} returned an empty/invalid response")
 
-                raw_output = response.choices[0].message.content
+                raw_output = response.content[0].text
                 return json.loads(raw_output)
 
             except Exception as e:
