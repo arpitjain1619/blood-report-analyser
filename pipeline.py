@@ -84,11 +84,11 @@ Use the exact biomarker names as they appear in the report. Only include the val
 def analyze_report(image_path: str) -> dict:
     """
     The full pipeline as a reusable function:
-    image path in -> {biomarkers, categorized, advice} out.
+    image path in -> {report_type, findings, advice} out.
     This is what the FastAPI endpoint (and the CLI entry point below) both call.
     """
     biomarkers = extract_biomarkers(image_path)
-    categorized = categorize(biomarkers)
+    findings = categorize(biomarkers)
 
     if MOCK_AI:
         from mock_data import MOCK_ADVICE
@@ -96,11 +96,11 @@ def analyze_report(image_path: str) -> dict:
         advice = MOCK_ADVICE
     else:
         vector_store = load_vector_store()
-        advice = generate_advice(categorized, vector_store)
+        advice = generate_advice(findings, vector_store)
 
     return {
-        "biomarkers": biomarkers,
-        "categorized": categorized,
+        "report_type": "blood",
+        "findings": findings,
         "advice": advice,
     }
 
@@ -110,9 +110,15 @@ if __name__ == "__main__":
     print(f"Analyzing {image_path}...")
     result = analyze_report(image_path)
 
+    print(f"\n--- REPORT TYPE: {result['report_type']} ---")
+
     print("\n--- RESULTS ---")
-    for name, info in result["categorized"].items():
-        print(f"{name}: {info['value']} → {info['status']} (normal: {info.get('normal_range', 'N/A')})")
+    for f in result["findings"]:
+        if f["kind"] == "numeric":
+            normal = f["normal_range"] if f["normal_range"] is not None else "N/A"
+            print(f"{f['name']}: {f['value']} → {f['status']} (normal: {normal})")
+        elif f["kind"] == "narrative":
+            print(f"[{f['section']}] {f['finding_text']}")
 
     print("\n--- PERSONALIZED ADVICE ---")
     print(result["advice"])
