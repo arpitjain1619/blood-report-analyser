@@ -36,27 +36,27 @@ def call_model_with_fallback(prompt: str, max_retries_per_model: int = 2) -> str
     raise last_error
 
 
-def generate_advice(categorized: dict, vector_store: list) -> str:
-    abnormal = {
-        name: info for name, info in categorized.items()
-        if info["status"] in ("High", "Low")
-    }
+def generate_advice(findings: list, vector_store: list) -> str:
+    abnormal = [
+        f for f in findings
+        if f["kind"] == "numeric" and f["status"] in ("High", "Low")
+    ]
 
     if not abnormal:
         return "All biomarkers are within normal range. No specific concerns to flag."
 
     context_pieces = []
-    for name, info in abnormal.items():
-        query = f"{name} is {info['status']}"
+    for f in abnormal:
+        query = f"{f['name']} is {f['status']}"
         matches = retrieve_relevant_chunks(query, vector_store, top_k=1)
         for match in matches:
-            context_pieces.append(f"[Context for {name} - {info['status']}]\n{match['text']}")
+            context_pieces.append(f"[Context for {f['name']} - {f['status']}]\n{match['text']}")
 
     retrieved_context = "\n\n".join(context_pieces)
 
     findings_summary = "\n".join(
-        f"- {name}: {info['value']} ({info['status']}, normal range: {info['normal_range']})"
-        for name, info in abnormal.items()
+        f"- {f['name']}: {f['value']} ({f['status']}, normal range: {f['normal_range']})"
+        for f in abnormal
     )
 
     prompt = f"""You are a health information assistant. A blood report shows the following abnormal findings:
