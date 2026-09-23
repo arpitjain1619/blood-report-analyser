@@ -4,6 +4,7 @@ import json
 from dotenv import load_dotenv
 from anthropic import Anthropic
 from categorize import categorize
+from detector import detect_report_type
 from retriever import load_vector_store
 from advisor import generate_advice
 
@@ -82,12 +83,8 @@ Use the exact biomarker names as they appear in the report. Only include the val
 
 
 def analyze_report(image_path: str) -> dict:
-    """
-    The full pipeline as a reusable function:
-    image path in -> {report_type, findings, advice} out.
-    This is what the FastAPI endpoint (and the CLI entry point below) both call.
-    """
     biomarkers = extract_biomarkers(image_path)
+    report_type = detect_report_type(biomarkers)
     findings = categorize(biomarkers)
 
     if MOCK_AI:
@@ -99,7 +96,7 @@ def analyze_report(image_path: str) -> dict:
         advice = generate_advice(findings, vector_store)
 
     return {
-        "report_type": "blood",
+        "report_type": report_type,
         "findings": findings,
         "advice": advice,
     }
