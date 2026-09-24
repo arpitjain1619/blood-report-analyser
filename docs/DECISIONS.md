@@ -890,3 +890,36 @@ signature hits); picks the highest-scoring type when several match.
 
 DEC-003 (rule-based over AI for deterministic tasks), DEC-020 (reference data
 as JSON).
+
+---
+
+## DEC-022: HRA-04 (resilience on new AI calls) required no new code
+
+### Status
+
+Accepted
+
+### Context
+
+HRA-04 requires every new AI call added during the HRA expansion to carry
+retry/fallback/timeout/defensive-validation (per DEC-011).
+
+### Decision
+
+Closed HRA-04 with no code change. Auditing HRA-01–HRA-03 showed they added
+no new AI calls: report-type detection (HRA-02) is rule-based set intersection,
+and PDF support (HRA-03) is non-AI rendering that reuses the existing,
+already-resilient vision path. The three pre-existing AI calls (vision, advice,
+embeddings) already carry resilience.
+
+### Reason
+
+HRA-04 is a standing guard, not a one-off build task. With nothing new to
+protect, the correct action was to enforce the rule going forward rather than
+manufacture code. Added an explicit Definition-of-Done checklist item so any
+future AI call (e.g. an AI detection fallback, or the narrative extractor in
+HRA-22) must include resilience before shipping.
+
+### Related
+
+DEC-011 (resilience on every AI call), HRA-22 (first likely future AI call).
