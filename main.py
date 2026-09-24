@@ -40,10 +40,14 @@ def root():
 
 @app.post("/analyze-report")
 async def analyze_report_endpoint(file: UploadFile = File(...)):
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Uploaded file must be an image")
+    is_image = file.content_type.startswith("image/")
+    is_pdf = file.content_type == "application/pdf"
+    if not (is_image or is_pdf):
+        raise HTTPException(status_code=400, detail="Uploaded file must be an image or a PDF")
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+    suffix = ".pdf" if is_pdf else ".png"
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         shutil.copyfileobj(file.file, tmp)
         tmp_path = tmp.name
 
@@ -58,11 +62,13 @@ async def analyze_report_endpoint(file: UploadFile = File(...)):
 
 @app.post("/upload")
 async def upload_report(file: UploadFile = File(...)):
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="File must be an image")
+    is_image = file.content_type.startswith("image/")
+    is_pdf = file.content_type == "application/pdf"
+    if not (is_image or is_pdf):
+        raise HTTPException(status_code=400, detail="File must be an image or a PDF")
     os.makedirs("uploads", exist_ok=True)
 
-    ext = os.path.splitext(file.filename)[1] or ".png"
+    ext = os.path.splitext(file.filename)[1] or (".pdf" if is_pdf else ".png")
     filename = f"{uuid.uuid4()}{ext}"
     filepath = os.path.join("uploads", filename)
 

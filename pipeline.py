@@ -7,6 +7,7 @@ from categorize import categorize
 from detector import detect_report_type
 from retriever import load_vector_store
 from advisor import generate_advice
+from pdf_utils import pdf_to_images
 
 load_dotenv()
 
@@ -82,8 +83,32 @@ Use the exact biomarker names as they appear in the report. Only include the val
     raise last_error
 
 
-def analyze_report(image_path: str) -> dict:
-    biomarkers = extract_biomarkers(image_path)
+def _extract_biomarkers_from_pdf(pdf_path: str) -> dict:
+    """
+    Renders every page of a PDF to an image, runs vision extraction on each
+    page, and merges all pages' biomarkers into one combined dict
+    (Approach 1: a multi-page PDF is treated as ONE report split across pages).
+    Temp page-images are always cleaned up.
+    """
+    page_images = pdf_to_images(pdf_path)
+    merged = {}
+    try:
+        for img_path in page_images:
+            page_biomarkers = extract_biomarkers(img_path)
+            merged.update(page_biomarkers)
+    finally:
+        for img_path in page_images:
+            if os.path.exists(img_path):
+                os.remove(img_path)
+    return merged
+
+
+def analyze_report(file_path: str) -> dict:
+    if file_path.lower().endswith(".pdf"):
+        biomarkers = _extract_biomarkers_from_pdf(file_path)
+    else:
+        biomarkers = extract_biomarkers(file_path)
+
     report_type = detect_report_type(biomarkers)
     findings = categorize(biomarkers)
 
