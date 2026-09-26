@@ -38,13 +38,21 @@ def extract_biomarkers(image_path: str, max_retries_per_model: int = 1) -> dict:
         image_bytes = f.read()
     base64_image = base64.b64encode(image_bytes).decode("utf-8")
 
-    prompt_text = """This is a blood test report. Extract every biomarker name and its numeric value.
+    prompt_text = """This is a medical lab report. Extract every biomarker/test and its details.
 
 Respond with ONLY a JSON object, no other text, no markdown formatting, no code fences.
-Format exactly like this example:
-{"Hemoglobin": 15.0, "Platelet Count": 265}
+For each test, provide an object with:
+  - "value": the numeric result (number only)
+  - "unit": the unit exactly as printed on the report (e.g. "g/dL", "mg/dL"), or "" if none is shown
+  - "printed_range": the reference/normal range exactly as printed on the report (e.g. "13.0-17.0"), or null if none is shown
 
-Use the exact biomarker names as they appear in the report. Only include the value (number), not units."""
+Format exactly like this example:
+{
+  "Hemoglobin": {"value": 15.0, "unit": "g/dL", "printed_range": "13.0-17.0"},
+  "Platelet Count": {"value": 265, "unit": "x10^3/uL", "printed_range": "150-450"}
+}
+
+Use the exact test names as they appear in the report."""
 
     last_error = None
 
@@ -151,8 +159,15 @@ if __name__ == "__main__":
     print("\n--- RESULTS ---")
     for f in result["findings"]:
         if f["kind"] == "numeric":
+            unit = f.get("unit", "")
             normal = f["normal_range"] if f["normal_range"] is not None else "N/A"
-            print(f"{f['name']}: {f['value']} → {f['status']} (normal: {normal})")
+            source = f.get("range_source", "data")
+            printed = f.get("printed_range")
+            printed_note = f" [report printed: {printed}]" if printed else ""
+            print(
+                f"{f['name']}: {f['value']} {unit} → {f['status']} "
+                f"({f['severity']}, normal: {normal}, via: {source}){printed_note}"
+            )
         elif f["kind"] == "narrative":
             print(f"[{f['section']}] {f['finding_text']}")
 
