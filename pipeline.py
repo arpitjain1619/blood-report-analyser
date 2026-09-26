@@ -22,6 +22,11 @@ VISION_MODELS = [
     "claude-haiku-4-5",
 ]
 
+UNSUPPORTED_REPORT_MESSAGE = (
+    "This doesn't appear to be a report type we currently support, so we can't "
+    "provide an analysis. Please consult a licensed doctor to interpret your report."
+)
+
 
 def extract_biomarkers(image_path: str, max_retries_per_model: int = 1) -> dict:
     if MOCK_AI:
@@ -110,6 +115,16 @@ def analyze_report(file_path: str) -> dict:
         biomarkers = extract_biomarkers(file_path)
 
     report_type = detect_report_type(biomarkers)
+
+    # If we can't confidently identify the report type, stop here — don't
+    # categorize or generate advice for a report we don't understand.
+    if report_type == "unknown":
+        return {
+            "report_type": "unknown",
+            "findings": [],
+            "advice": UNSUPPORTED_REPORT_MESSAGE,
+        }
+
     findings = categorize(biomarkers)
 
     if MOCK_AI:
@@ -125,7 +140,6 @@ def analyze_report(file_path: str) -> dict:
         "findings": findings,
         "advice": advice,
     }
-
 
 if __name__ == "__main__":
     image_path = "sample_report.png"
