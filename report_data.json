@@ -17,65 +17,146 @@
         "kind": "range",
         "min": 4.0,
         "max": 11.0,
-        "unit": "x10^3/uL"
+        "unit": "x10^3/uL",
+        "aliases": [
+          "TLC",
+          "WBC",
+          "WBC Count",
+          "White Blood Cell Count",
+          "Leukocyte Count",
+          "Total WBC Count"
+        ]
       },
       "RBC Count": {
         "kind": "range",
         "min": 4.2,
         "max": 5.9,
-        "unit": "million/uL"
+        "unit": "million/uL",
+        "aliases": [
+          "RBC",
+          "Red Blood Cell Count",
+          "Erythrocyte Count",
+          "Total RBC Count"
+        ]
       },
       "Hemoglobin": {
         "kind": "range",
         "min": 13.0,
         "max": 17.0,
-        "unit": "g/dL"
+        "unit": "g/dL",
+        "aliases": ["Hb", "HGB", "Haemoglobin", "Hgb"]
       },
-      "Hematocrit": { "kind": "range", "min": 40.0, "max": 50.0, "unit": "%" },
-      "MCV": { "kind": "range", "min": 80.0, "max": 100.0, "unit": "fL" },
-      "MCH": { "kind": "range", "min": 27.0, "max": 33.0, "unit": "pg" },
-      "MCHC": { "kind": "range", "min": 32.0, "max": 36.0, "unit": "g/dL" },
-      "RDW-CV": { "kind": "range", "min": 11.5, "max": 14.5, "unit": "%" },
+      "Hematocrit": {
+        "kind": "range",
+        "min": 40.0,
+        "max": 50.0,
+        "unit": "%",
+        "aliases": ["HCT", "PCV", "Packed Cell Volume"]
+      },
+      "MCV": {
+        "kind": "range",
+        "min": 80.0,
+        "max": 100.0,
+        "unit": "fL",
+        "aliases": ["Mean Corpuscular Volume"]
+      },
+      "MCH": {
+        "kind": "range",
+        "min": 27.0,
+        "max": 33.0,
+        "unit": "pg",
+        "aliases": ["Mean Corpuscular Hemoglobin"]
+      },
+      "MCHC": {
+        "kind": "range",
+        "min": 32.0,
+        "max": 36.0,
+        "unit": "g/dL",
+        "aliases": ["Mean Corpuscular Hemoglobin Concentration"]
+      },
+      "RDW-CV": {
+        "kind": "range",
+        "min": 11.5,
+        "max": 14.5,
+        "unit": "%",
+        "aliases": ["RDW", "Red Cell Distribution Width"]
+      },
       "Platelet Count": {
         "kind": "range",
         "min": 150,
         "max": 450,
-        "unit": "x10^3/uL"
+        "unit": "x10^3/uL",
+        "aliases": ["Platelets", "PLT", "Thrombocyte Count"]
       },
-      "Neutrophils": { "kind": "range", "min": 40, "max": 70, "unit": "%" },
-      "Lymphocytes": { "kind": "range", "min": 20, "max": 45, "unit": "%" },
-      "Monocytes": { "kind": "range", "min": 2, "max": 10, "unit": "%" },
-      "Eosinophils": { "kind": "range", "min": 1, "max": 6, "unit": "%" },
-      "Basophils": { "kind": "range", "min": 0, "max": 2, "unit": "%" },
+      "Neutrophils": {
+        "kind": "range",
+        "min": 40,
+        "max": 70,
+        "unit": "%",
+        "aliases": ["Neutrophil %", "Neutrophil Percentage"]
+      },
+      "Lymphocytes": {
+        "kind": "range",
+        "min": 20,
+        "max": 45,
+        "unit": "%",
+        "aliases": ["Lymphocyte %", "Lymphocyte Percentage"]
+      },
+      "Monocytes": {
+        "kind": "range",
+        "min": 2,
+        "max": 10,
+        "unit": "%",
+        "aliases": ["Monocyte %", "Monocyte Percentage"]
+      },
+      "Eosinophils": {
+        "kind": "range",
+        "min": 1,
+        "max": 6,
+        "unit": "%",
+        "aliases": ["Eosinophil %", "Eosinophil Percentage"]
+      },
+      "Basophils": {
+        "kind": "range",
+        "min": 0,
+        "max": 2,
+        "unit": "%",
+        "aliases": ["Basophil %", "Basophil Percentage"]
+      },
       "Absolute Neutrophil Count": {
         "kind": "range",
         "min": 2.0,
         "max": 7.0,
-        "unit": "x10^3/uL"
+        "unit": "x10^3/uL",
+        "aliases": ["ANC", "Neutrophils Absolute", "Absolute Neutrophils"]
       },
       "Absolute Lymphocyte Count": {
         "kind": "range",
         "min": 1.0,
         "max": 3.0,
-        "unit": "x10^3/uL"
+        "unit": "x10^3/uL",
+        "aliases": ["ALC", "Lymphocytes Absolute", "Absolute Lymphocytes"]
       },
       "Absolute Monocyte Count": {
         "kind": "range",
         "min": 0.2,
         "max": 1.0,
-        "unit": "x10^3/uL"
+        "unit": "x10^3/uL",
+        "aliases": ["AMC", "Monocytes Absolute", "Absolute Monocytes"]
       },
       "Absolute Eosinophil Count": {
         "kind": "range",
         "min": 0.02,
         "max": 0.5,
-        "unit": "x10^3/uL"
+        "unit": "x10^3/uL",
+        "aliases": ["AEC", "Eosinophils Absolute", "Absolute Eosinophils"]
       },
       "Absolute Basophil Count": {
         "kind": "range",
         "min": 0.0,
         "max": 0.1,
-        "unit": "x10^3/uL"
+        "unit": "x10^3/uL",
+        "aliases": ["ABC", "Basophils Absolute", "Absolute Basophils"]
       }
     }
   },
@@ -86,6 +167,14 @@
       "Fasting Blood Glucose": {
         "kind": "bands",
         "unit": "mg/dL",
+        "aliases": [
+          "FBS",
+          "Fasting Blood Sugar",
+          "Fasting Glucose",
+          "Fasting Plasma Glucose",
+          "FPG",
+          "Glucose Fasting"
+        ],
         "bands": [
           { "max": 100, "label": "Normal", "severity": "normal" },
           {
@@ -100,6 +189,13 @@
       "HbA1c": {
         "kind": "bands",
         "unit": "%",
+        "aliases": [
+          "A1c",
+          "HBA1C",
+          "Glycated Hemoglobin",
+          "Glycosylated Hemoglobin",
+          "Glycated Haemoglobin"
+        ],
         "bands": [
           { "max": 5.7, "label": "Normal", "severity": "normal" },
           {
@@ -120,6 +216,12 @@
       "Total Cholesterol": {
         "kind": "bands",
         "unit": "mg/dL",
+        "aliases": [
+          "Cholesterol Total",
+          "Cholesterol",
+          "TC",
+          "Serum Cholesterol"
+        ],
         "bands": [
           { "max": 200, "label": "Desirable", "severity": "normal" },
           {
@@ -134,6 +236,12 @@
       "LDL": {
         "kind": "bands",
         "unit": "mg/dL",
+        "aliases": [
+          "LDL Cholesterol",
+          "LDL-C",
+          "Low Density Lipoprotein",
+          "Low-Density Lipoprotein"
+        ],
         "bands": [
           { "max": 100, "label": "Optimal", "severity": "normal" },
           {
@@ -155,6 +263,7 @@
       "Triglycerides": {
         "kind": "bands",
         "unit": "mg/dL",
+        "aliases": ["TG", "Trigs", "Serum Triglycerides"],
         "bands": [
           { "max": 150, "label": "Normal", "severity": "normal" },
           {
@@ -170,6 +279,12 @@
       "HDL": {
         "kind": "bands",
         "unit": "mg/dL",
+        "aliases": [
+          "HDL Cholesterol",
+          "HDL-C",
+          "High Density Lipoprotein",
+          "High-Density Lipoprotein"
+        ],
         "bands": [
           { "max": 40, "label": "Low", "severity": "attention" },
           { "min": 40, "max": 60, "label": "Normal", "severity": "normal" },
@@ -182,11 +297,41 @@
     "display_name": "Thyroid Profile",
     "signature_markers": ["TSH", "Free T4", "Free T3"],
     "ranges": {
-      "TSH": { "kind": "range", "min": 0.4, "max": 4.0, "unit": "mIU/L" },
-      "Free T4": { "kind": "range", "min": 0.8, "max": 1.8, "unit": "ng/dL" },
-      "Free T3": { "kind": "range", "min": 2.3, "max": 4.2, "unit": "pg/mL" },
-      "Total T4": { "kind": "range", "min": 5.0, "max": 12.0, "unit": "ug/dL" },
-      "Total T3": { "kind": "range", "min": 80, "max": 200, "unit": "ng/dL" }
+      "TSH": {
+        "kind": "range",
+        "min": 0.4,
+        "max": 4.0,
+        "unit": "mIU/L",
+        "aliases": ["Thyroid Stimulating Hormone", "Thyrotropin", "s-TSH"]
+      },
+      "Free T4": {
+        "kind": "range",
+        "min": 0.8,
+        "max": 1.8,
+        "unit": "ng/dL",
+        "aliases": ["FT4", "Free Thyroxine"]
+      },
+      "Free T3": {
+        "kind": "range",
+        "min": 2.3,
+        "max": 4.2,
+        "unit": "pg/mL",
+        "aliases": ["FT3", "Free Triiodothyronine"]
+      },
+      "Total T4": {
+        "kind": "range",
+        "min": 5.0,
+        "max": 12.0,
+        "unit": "ug/dL",
+        "aliases": ["T4", "Thyroxine", "Total Thyroxine"]
+      },
+      "Total T3": {
+        "kind": "range",
+        "min": 80,
+        "max": 200,
+        "unit": "ng/dL",
+        "aliases": ["T3", "Triiodothyronine", "Total Triiodothyronine"]
+      }
     }
   },
   "vitamins": {
@@ -197,13 +342,22 @@
         "kind": "direction",
         "prefer": "higher",
         "min": 30,
-        "unit": "ng/mL"
+        "unit": "ng/mL",
+        "aliases": [
+          "25-OH Vitamin D",
+          "25-Hydroxyvitamin D",
+          "25(OH)D",
+          "Vitamin D3",
+          "Vit D",
+          "Vitamin D Total"
+        ]
       },
       "Vitamin B12": {
         "kind": "range",
         "min": 200,
         "max": 900,
-        "unit": "pg/mL"
+        "unit": "pg/mL",
+        "aliases": ["B12", "Cobalamin", "Vitamin B-12", "Vit B12"]
       }
     }
   }
