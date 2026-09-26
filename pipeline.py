@@ -8,6 +8,7 @@ from detector import detect_report_type
 from retriever import load_vector_store
 from advisor import generate_advice
 from pdf_utils import pdf_to_images
+from name_resolver import resolve_biomarkers
 
 load_dotenv()
 
@@ -121,6 +122,10 @@ def analyze_report(file_path: str) -> dict:
         biomarkers = _extract_biomarkers_from_pdf(file_path)
     else:
         biomarkers = extract_biomarkers(file_path)
+
+    # Normalize lab-specific names (e.g. "Hb" -> "Hemoglobin") before anything
+    # else, so detection and categorization both see canonical names.
+    biomarkers = resolve_biomarkers(biomarkers)
 
     report_type = detect_report_type(biomarkers)
 
