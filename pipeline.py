@@ -125,7 +125,7 @@ def analyze_report(file_path: str) -> dict:
             "advice": UNSUPPORTED_REPORT_MESSAGE,
         }
 
-    findings = categorize(biomarkers)
+    findings = categorize(biomarkers, report_type)
 
     if MOCK_AI:
         from mock_data import MOCK_ADVICE
