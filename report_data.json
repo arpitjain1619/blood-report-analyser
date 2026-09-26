@@ -1,0 +1,210 @@
+{
+  "_note": "Illustrative reference values only — NOT clinically authoritative. Real reference ranges vary by lab, method, age, and sex. Do not use for medical decisions.",
+  "blood": {
+    "display_name": "Blood Report (CBC)",
+    "signature_markers": [
+      "Hemoglobin",
+      "Total Leukocyte Count",
+      "Platelet Count",
+      "RBC Count",
+      "Hematocrit",
+      "MCV",
+      "MCH",
+      "MCHC"
+    ],
+    "ranges": {
+      "Total Leukocyte Count": {
+        "kind": "range",
+        "min": 4.0,
+        "max": 11.0,
+        "unit": "x10^3/uL"
+      },
+      "RBC Count": {
+        "kind": "range",
+        "min": 4.2,
+        "max": 5.9,
+        "unit": "million/uL"
+      },
+      "Hemoglobin": {
+        "kind": "range",
+        "min": 13.0,
+        "max": 17.0,
+        "unit": "g/dL"
+      },
+      "Hematocrit": { "kind": "range", "min": 40.0, "max": 50.0, "unit": "%" },
+      "MCV": { "kind": "range", "min": 80.0, "max": 100.0, "unit": "fL" },
+      "MCH": { "kind": "range", "min": 27.0, "max": 33.0, "unit": "pg" },
+      "MCHC": { "kind": "range", "min": 32.0, "max": 36.0, "unit": "g/dL" },
+      "RDW-CV": { "kind": "range", "min": 11.5, "max": 14.5, "unit": "%" },
+      "Platelet Count": {
+        "kind": "range",
+        "min": 150,
+        "max": 450,
+        "unit": "x10^3/uL"
+      },
+      "Neutrophils": { "kind": "range", "min": 40, "max": 70, "unit": "%" },
+      "Lymphocytes": { "kind": "range", "min": 20, "max": 45, "unit": "%" },
+      "Monocytes": { "kind": "range", "min": 2, "max": 10, "unit": "%" },
+      "Eosinophils": { "kind": "range", "min": 1, "max": 6, "unit": "%" },
+      "Basophils": { "kind": "range", "min": 0, "max": 2, "unit": "%" },
+      "Absolute Neutrophil Count": {
+        "kind": "range",
+        "min": 2.0,
+        "max": 7.0,
+        "unit": "x10^3/uL"
+      },
+      "Absolute Lymphocyte Count": {
+        "kind": "range",
+        "min": 1.0,
+        "max": 3.0,
+        "unit": "x10^3/uL"
+      },
+      "Absolute Monocyte Count": {
+        "kind": "range",
+        "min": 0.2,
+        "max": 1.0,
+        "unit": "x10^3/uL"
+      },
+      "Absolute Eosinophil Count": {
+        "kind": "range",
+        "min": 0.02,
+        "max": 0.5,
+        "unit": "x10^3/uL"
+      },
+      "Absolute Basophil Count": {
+        "kind": "range",
+        "min": 0.0,
+        "max": 0.1,
+        "unit": "x10^3/uL"
+      }
+    }
+  },
+  "diabetes": {
+    "display_name": "Diabetes / Blood Sugar Report",
+    "signature_markers": ["HbA1c", "Fasting Blood Glucose"],
+    "ranges": {
+      "Fasting Blood Glucose": {
+        "kind": "bands",
+        "unit": "mg/dL",
+        "bands": [
+          { "max": 100, "label": "Normal", "severity": "normal" },
+          {
+            "min": 100,
+            "max": 126,
+            "label": "Prediabetes",
+            "severity": "attention"
+          },
+          { "min": 126, "label": "Diabetes", "severity": "attention" }
+        ]
+      },
+      "HbA1c": {
+        "kind": "bands",
+        "unit": "%",
+        "bands": [
+          { "max": 5.7, "label": "Normal", "severity": "normal" },
+          {
+            "min": 5.7,
+            "max": 6.5,
+            "label": "Prediabetes",
+            "severity": "attention"
+          },
+          { "min": 6.5, "label": "Diabetes", "severity": "attention" }
+        ]
+      }
+    }
+  },
+  "lipid": {
+    "display_name": "Lipid Profile",
+    "signature_markers": ["Total Cholesterol", "LDL", "HDL", "Triglycerides"],
+    "ranges": {
+      "Total Cholesterol": {
+        "kind": "bands",
+        "unit": "mg/dL",
+        "bands": [
+          { "max": 200, "label": "Desirable", "severity": "normal" },
+          {
+            "min": 200,
+            "max": 240,
+            "label": "Borderline High",
+            "severity": "attention"
+          },
+          { "min": 240, "label": "High", "severity": "attention" }
+        ]
+      },
+      "LDL": {
+        "kind": "bands",
+        "unit": "mg/dL",
+        "bands": [
+          { "max": 100, "label": "Optimal", "severity": "normal" },
+          {
+            "min": 100,
+            "max": 130,
+            "label": "Near Optimal",
+            "severity": "normal"
+          },
+          {
+            "min": 130,
+            "max": 160,
+            "label": "Borderline High",
+            "severity": "attention"
+          },
+          { "min": 160, "max": 190, "label": "High", "severity": "attention" },
+          { "min": 190, "label": "Very High", "severity": "attention" }
+        ]
+      },
+      "Triglycerides": {
+        "kind": "bands",
+        "unit": "mg/dL",
+        "bands": [
+          { "max": 150, "label": "Normal", "severity": "normal" },
+          {
+            "min": 150,
+            "max": 200,
+            "label": "Borderline High",
+            "severity": "attention"
+          },
+          { "min": 200, "max": 500, "label": "High", "severity": "attention" },
+          { "min": 500, "label": "Very High", "severity": "attention" }
+        ]
+      },
+      "HDL": {
+        "kind": "bands",
+        "unit": "mg/dL",
+        "bands": [
+          { "max": 40, "label": "Low", "severity": "attention" },
+          { "min": 40, "max": 60, "label": "Normal", "severity": "normal" },
+          { "min": 60, "label": "Protective", "severity": "normal" }
+        ]
+      }
+    }
+  },
+  "thyroid": {
+    "display_name": "Thyroid Profile",
+    "signature_markers": ["TSH", "Free T4", "Free T3"],
+    "ranges": {
+      "TSH": { "kind": "range", "min": 0.4, "max": 4.0, "unit": "mIU/L" },
+      "Free T4": { "kind": "range", "min": 0.8, "max": 1.8, "unit": "ng/dL" },
+      "Free T3": { "kind": "range", "min": 2.3, "max": 4.2, "unit": "pg/mL" },
+      "Total T4": { "kind": "range", "min": 5.0, "max": 12.0, "unit": "ug/dL" },
+      "Total T3": { "kind": "range", "min": 80, "max": 200, "unit": "ng/dL" }
+    }
+  },
+  "vitamins": {
+    "display_name": "Vitamin Panel",
+    "signature_markers": ["Vitamin D", "Vitamin B12"],
+    "ranges": {
+      "Vitamin D": {
+        "kind": "direction",
+        "prefer": "higher",
+        "min": 30,
+        "unit": "ng/mL"
+      },
+      "Vitamin B12": {
+        "kind": "range",
+        "min": 200,
+        "max": 900,
+        "unit": "pg/mL"
+      }
+    }
+  }
+}
