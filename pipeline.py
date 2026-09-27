@@ -36,9 +36,10 @@ UNSUPPORTED_REPORT_MESSAGE = (
 
 def extract_biomarkers(image_path: str, max_retries_per_model: int = 1) -> dict:
     if MOCK_AI:
-        from mock_data import MOCK_BIOMARKERS
-        print("[MOCK_AI] Skipping real vision call, returning mock biomarkers.")
-        return MOCK_BIOMARKERS
+        from mock_data import get_mock_biomarkers
+        mock_report = os.getenv("MOCK_REPORT", "blood")
+        print(f"[MOCK_AI] Skipping real vision call, returning mock '{mock_report}' biomarkers.")
+        return get_mock_biomarkers(mock_report)
 
     with open(image_path, "rb") as f:
         image_bytes = f.read()
@@ -136,9 +137,10 @@ def _analyze_numeric(biomarkers: dict, report_type: str) -> dict:
     findings = categorize(biomarkers, report_type)
 
     if MOCK_AI:
-        from mock_data import MOCK_ADVICE
+        from mock_data import get_mock_advice
+        mock_report = os.getenv("MOCK_REPORT", "blood")
         print("[MOCK_AI] Skipping real advice generation, returning mock advice.")
-        advice = MOCK_ADVICE
+        advice = get_mock_advice(mock_report)
     else:
         vector_store = load_vector_store()
         advice = generate_advice(findings, vector_store)
