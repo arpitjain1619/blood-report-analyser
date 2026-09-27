@@ -8,13 +8,18 @@ def build_vector_store(output_path: str = "vector_store.json"):
     articles = load_articles()
     vector_store = []
 
-    for filename, text in articles.items():
+    for article in articles:
+        filename = article["filename"]
+        report_type = article["type"]
+        text = article["text"]
+
         chunks = chunk_text(text, chunk_size=60, overlap=15)
         for i, chunk in enumerate(chunks):
-            print(f"Embedding {filename} — chunk {i+1}/{len(chunks)}...")
+            print(f"Embedding [{report_type}] {filename} — chunk {i+1}/{len(chunks)}...")
             vector = embed_text(chunk)
             vector_store.append({
                 "article": filename,
+                "type": report_type,
                 "chunk_index": i,
                 "text": chunk,
                 "embedding": vector,
