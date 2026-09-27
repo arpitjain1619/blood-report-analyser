@@ -23,6 +23,11 @@ VISION_MODELS = [
     "claude-haiku-4-5",
 ]
 
+NARRATIVE_NOT_SUPPORTED_MESSAGE = (
+    "This looks like a text-based (narrative) report, which we can't analyze yet. "
+    "Please consult a licensed doctor to interpret your report."
+)
+
 UNSUPPORTED_REPORT_MESSAGE = (
     "This doesn't appear to be a report type we currently support, so we can't "
     "provide an analysis. Please consult a licensed doctor to interpret your report."
@@ -117,27 +122,17 @@ def _extract_biomarkers_from_pdf(pdf_path: str) -> dict:
     return merged
 
 
-def analyze_report(file_path: str) -> dict:
-    if file_path.lower().endswith(".pdf"):
-        biomarkers = _extract_biomarkers_from_pdf(file_path)
-    else:
-        biomarkers = extract_biomarkers(file_path)
+def _get_report_category(report_type: str) -> str:
+    """Look up whether a report type is 'numeric' or 'narrative'."""
+    import json
+    path = os.path.join(os.path.dirname(__file__), "report_data.json")
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data.get(report_type, {}).get("category", "numeric")
 
-    # Normalize lab-specific names (e.g. "Hb" -> "Hemoglobin") before anything
-    # else, so detection and categorization both see canonical names.
-    biomarkers = resolve_biomarkers(biomarkers)
 
-    report_type = detect_report_type(biomarkers)
-
-    # If we can't confidently identify the report type, stop here — don't
-    # categorize or generate advice for a report we don't understand.
-    if report_type == "unknown":
-        return {
-            "report_type": "unknown",
-            "findings": [],
-            "advice": UNSUPPORTED_REPORT_MESSAGE,
-        }
-
+def _analyze_numeric(biomarkers: dict, report_type: str) -> dict:
+    """The numeric pipeline: categorize values against ranges, then advise."""
     findings = categorize(biomarkers, report_type)
 
     if MOCK_AI:
@@ -153,6 +148,44 @@ def analyze_report(file_path: str) -> dict:
         "findings": findings,
         "advice": advice,
     }
+
+
+def _analyze_narrative(biomarkers: dict, report_type: str) -> dict:
+    """
+    Placeholder for narrative (text-based) reports, e.g. radiology.
+    Not built yet — see HRA-22/HRA-23. Returns an honest 'not supported' result.
+    """
+    return {
+        "report_type": report_type,
+        "findings": [],
+        "advice": NARRATIVE_NOT_SUPPORTED_MESSAGE,
+    }
+
+
+def analyze_report(file_path: str) -> dict:
+    if file_path.lower().endswith(".pdf"):
+        biomarkers = _extract_biomarkers_from_pdf(file_path)
+    else:
+        biomarkers = extract_biomarkers(file_path)
+
+    biomarkers = resolve_biomarkers(biomarkers)
+
+    report_type = detect_report_type(biomarkers)
+
+    # Unknown type: can't identify it at all — stop honestly.
+    if report_type == "unknown":
+        return {
+            "report_type": "unknown",
+            "findings": [],
+            "advice": UNSUPPORTED_REPORT_MESSAGE,
+        }
+
+    # Branch by the report type's category: numeric vs narrative.
+    category = _get_report_category(report_type)
+    if category == "narrative":
+        return _analyze_narrative(biomarkers, report_type)
+    else:
+        return _analyze_numeric(biomarkers, report_type)
 
 if __name__ == "__main__":
     image_path = "sample_report.png"

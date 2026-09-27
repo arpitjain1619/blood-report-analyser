@@ -2,6 +2,7 @@
   "_note": "Illustrative reference values only — NOT clinically authoritative. Real reference ranges vary by lab, method, age, and sex. Do not use for medical decisions.",
   "blood": {
     "display_name": "Blood Report (CBC)",
+    "category": "numeric",
     "signature_markers": [
       "Hemoglobin",
       "Total Leukocyte Count",
@@ -162,6 +163,7 @@
   },
   "diabetes": {
     "display_name": "Diabetes / Blood Sugar Report",
+    "category": "numeric",
     "signature_markers": ["HbA1c", "Fasting Blood Glucose"],
     "ranges": {
       "Fasting Blood Glucose": {
@@ -211,6 +213,7 @@
   },
   "lipid": {
     "display_name": "Lipid Profile",
+    "category": "numeric",
     "signature_markers": ["Total Cholesterol", "LDL", "HDL", "Triglycerides"],
     "ranges": {
       "Total Cholesterol": {
@@ -295,6 +298,7 @@
   },
   "thyroid": {
     "display_name": "Thyroid Profile",
+    "category": "numeric",
     "signature_markers": ["TSH", "Free T4", "Free T3"],
     "ranges": {
       "TSH": {
@@ -336,6 +340,7 @@
   },
   "vitamins": {
     "display_name": "Vitamin Panel",
+    "category": "numeric",
     "signature_markers": ["Vitamin D", "Vitamin B12"],
     "ranges": {
       "Vitamin D": {
