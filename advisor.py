@@ -36,10 +36,10 @@ def call_model_with_fallback(prompt: str, max_retries_per_model: int = 2) -> str
     raise last_error
 
 
-def generate_advice(findings: list, vector_store: list) -> str:
+def generate_advice(findings: list, vector_store: list, report_type: str = None) -> str:
     abnormal = [
         f for f in findings
-        if f["kind"] == "numeric" and f["status"] in ("High", "Low")
+        if f["kind"] == "numeric" and f.get("severity") == "attention"
     ]
 
     if not abnormal:
@@ -48,11 +48,12 @@ def generate_advice(findings: list, vector_store: list) -> str:
     context_pieces = []
     for f in abnormal:
         query = f"{f['name']} is {f['status']}"
-        matches = retrieve_relevant_chunks(query, vector_store, top_k=1)
+        matches = retrieve_relevant_chunks(query, vector_store, top_k=1, report_type=report_type)
         for match in matches:
             context_pieces.append(f"[Context for {f['name']} - {f['status']}]\n{match['text']}")
 
     retrieved_context = "\n\n".join(context_pieces)
+    ...
 
     findings_summary = "\n".join(
         f"- {f['name']}: {f['value']} ({f['status']}, normal range: {f['normal_range']})"
