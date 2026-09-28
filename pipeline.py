@@ -9,6 +9,7 @@ from retriever import load_vector_store
 from advisor import generate_advice
 from pdf_utils import pdf_to_images
 from name_resolver import resolve_biomarkers
+from json_utils import extract_json
 
 load_dotenv()
 
@@ -94,7 +95,7 @@ Use the exact test names as they appear in the report."""
                     raise ValueError(f"Model {model} returned an empty/invalid response")
 
                 raw_output = response.content[0].text
-                return _extract_json(raw_output)
+                return extract_json(raw_output)
 
             except Exception as e:
                 last_error = e
@@ -121,34 +122,6 @@ def _extract_biomarkers_from_pdf(pdf_path: str) -> dict:
             if os.path.exists(img_path):
                 os.remove(img_path)
     return merged
-
-def _extract_json(raw_output: str) -> dict:
-    """
-    Parse the model's response into JSON, tolerating common wrapping:
-    markdown code fences (```json ... ```), stray whitespace, and any prose
-    before/after the JSON object. Real vision models often add these despite
-    being asked not to.
-    """
-    text = raw_output.strip()
-
-    # Strip a leading ```json or ``` fence and a trailing ``` fence.
-    if text.startswith("```"):
-        # remove the opening fence line (``` or ```json)
-        text = text.split("\n", 1)[1] if "\n" in text else text
-        # remove a trailing ``` if present
-        if text.rstrip().endswith("```"):
-            text = text.rstrip()[:-3]
-        text = text.strip()
-
-    # Fallback: if there's still surrounding prose, slice from the first { to
-    # the last } so we parse just the JSON object.
-    if not text.startswith("{"):
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            text = text[start:end + 1]
-
-    return json.loads(text)
 
 
 def _get_report_category(report_type: str) -> str:
@@ -243,4 +216,12 @@ if __name__ == "__main__":
             print(f"[{f['section']}] {f['finding_text']}")
 
     print("\n--- PERSONALIZED ADVICE ---")
-    print(result["advice"])
+    advice = result["advice"]
+    if isinstance(advice, dict):
+        print(advice.get("summary", ""))
+        for item in advice.get("findings", []):
+            print(f"\n• {item.get('name', '')}:")
+            print(f"  {item.get('advice', '')}")
+    else:
+        # Backward-safe: if advice is ever a plain string, print it directly.
+        print(advice)
