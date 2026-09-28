@@ -94,7 +94,7 @@ Use the exact test names as they appear in the report."""
                     raise ValueError(f"Model {model} returned an empty/invalid response")
 
                 raw_output = response.content[0].text
-                return json.loads(raw_output)
+                return _extract_json(raw_output)
 
             except Exception as e:
                 last_error = e
@@ -122,6 +122,34 @@ def _extract_biomarkers_from_pdf(pdf_path: str) -> dict:
                 os.remove(img_path)
     return merged
 
+def _extract_json(raw_output: str) -> dict:
+    """
+    Parse the model's response into JSON, tolerating common wrapping:
+    markdown code fences (```json ... ```), stray whitespace, and any prose
+    before/after the JSON object. Real vision models often add these despite
+    being asked not to.
+    """
+    text = raw_output.strip()
+
+    # Strip a leading ```json or ``` fence and a trailing ``` fence.
+    if text.startswith("```"):
+        # remove the opening fence line (``` or ```json)
+        text = text.split("\n", 1)[1] if "\n" in text else text
+        # remove a trailing ``` if present
+        if text.rstrip().endswith("```"):
+            text = text.rstrip()[:-3]
+        text = text.strip()
+
+    # Fallback: if there's still surrounding prose, slice from the first { to
+    # the last } so we parse just the JSON object.
+    if not text.startswith("{"):
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            text = text[start:end + 1]
+
+    return json.loads(text)
+
 
 def _get_report_category(report_type: str) -> str:
     """Look up whether a report type is 'numeric' or 'narrative'."""
@@ -143,7 +171,7 @@ def _analyze_numeric(biomarkers: dict, report_type: str) -> dict:
         advice = get_mock_advice(mock_report)
     else:
         vector_store = load_vector_store()
-        advice = generate_advice(findings, vector_store)
+        advice = generate_advice(findings, vector_store, report_type)
 
     return {
         "report_type": report_type,
@@ -189,10 +217,13 @@ def analyze_report(file_path: str) -> dict:
     else:
         return _analyze_numeric(biomarkers, report_type)
 
+
 if __name__ == "__main__":
-    image_path = "sample_report.png"
-    print(f"Analyzing {image_path}...")
-    result = analyze_report(image_path)
+    import sys
+
+    file_path = sys.argv[1] if len(sys.argv) > 1 else "sample_report.png"
+    print(f"Analyzing {file_path}...")
+    result = analyze_report(file_path)
 
     print(f"\n--- REPORT TYPE: {result['report_type']} ---")
 
