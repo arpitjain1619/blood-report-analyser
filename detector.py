@@ -29,3 +29,20 @@ def detect_report_type(biomarkers: dict, min_matches: int = 2) -> str:
             best_type = type_key
 
     return best_type
+
+
+def get_disclaimer(report_type: str = None) -> str:
+    """
+    Return the disclaimer text for a report type: the type's own 'disclaimer'
+    if it has one, otherwise the shared '_default_disclaimer'. Works for unknown
+    or None types too (falls back to the default).
+    """
+    report_data = _load_report_data()
+    default = report_data.get("_default_disclaimer", "")
+
+    if report_type and report_type in report_data:
+        type_info = report_data[report_type]
+        if isinstance(type_info, dict):
+            return type_info.get("disclaimer", default)
+
+    return default
