@@ -1,5 +1,6 @@
 {
   "_note": "Illustrative reference values only — NOT clinically authoritative. Real reference ranges vary by lab, method, age, and sex. Do not use for medical decisions.",
+  "_default_disclaimer": "This analysis is educational only and is not a medical diagnosis. Results can be affected by many factors and should be interpreted by a professional. Please consult a licensed doctor to review your report and decide on any next steps.",
   "blood": {
     "display_name": "Blood Report (CBC)",
     "category": "numeric",

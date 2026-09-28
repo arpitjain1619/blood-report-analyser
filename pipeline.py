@@ -4,12 +4,12 @@ import json
 from dotenv import load_dotenv
 from anthropic import Anthropic
 from categorize import categorize
-from detector import detect_report_type
 from retriever import load_vector_store
 from advisor import generate_advice
 from pdf_utils import pdf_to_images
 from name_resolver import resolve_biomarkers
 from json_utils import extract_json
+from detector import detect_report_type, get_disclaimer
 
 load_dotenv()
 
@@ -175,20 +175,22 @@ def analyze_report(file_path: str) -> dict:
 
     report_type = detect_report_type(biomarkers)
 
-    # Unknown type: can't identify it at all — stop honestly.
     if report_type == "unknown":
-        return {
+        result = {
             "report_type": "unknown",
             "findings": [],
             "advice": UNSUPPORTED_REPORT_MESSAGE,
         }
-
-    # Branch by the report type's category: numeric vs narrative.
-    category = _get_report_category(report_type)
-    if category == "narrative":
-        return _analyze_narrative(biomarkers, report_type)
     else:
-        return _analyze_numeric(biomarkers, report_type)
+        category = _get_report_category(report_type)
+        if category == "narrative":
+            result = _analyze_narrative(biomarkers, report_type)
+        else:
+            result = _analyze_numeric(biomarkers, report_type)
+
+    # Guarantee a disclaimer on every result, regardless of type or model output.
+    result["disclaimer"] = get_disclaimer(result.get("report_type"))
+    return result
 
 
 if __name__ == "__main__":
@@ -225,3 +227,5 @@ if __name__ == "__main__":
     else:
         # Backward-safe: if advice is ever a plain string, print it directly.
         print(advice)
+    print("\n--- DISCLAIMER ---")
+    print(result.get("disclaimer", ""))
