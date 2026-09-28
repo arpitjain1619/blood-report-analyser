@@ -1,6 +1,7 @@
 {
   "_note": "Illustrative reference values only — NOT clinically authoritative. Real reference ranges vary by lab, method, age, and sex. Do not use for medical decisions.",
   "_default_disclaimer": "This analysis is educational only and is not a medical diagnosis. Results can be affected by many factors and should be interpreted by a professional. Please consult a licensed doctor to review your report and decide on any next steps.",
+  "_critical_disclaimer": "One or more of your results is significantly outside the typical range. This is educational information only and not a diagnosis, but values this far from normal are generally considered a reason to seek prompt medical attention. Please contact a licensed doctor promptly to review your report.",
   "blood": {
     "display_name": "Blood Report (CBC)",
     "category": "numeric",
@@ -20,6 +21,8 @@
         "min": 4.0,
         "max": 11.0,
         "unit": "x10^3/uL",
+        "critical_low": 2.0,
+        "critical_high": 30.0,
         "aliases": [
           "TLC",
           "WBC",
@@ -46,6 +49,8 @@
         "min": 13.0,
         "max": 17.0,
         "unit": "g/dL",
+        "critical_low": 7.0,
+        "critical_high": 20.0,
         "aliases": ["Hb", "HGB", "Haemoglobin", "Hgb"]
       },
       "Hematocrit": {
@@ -88,6 +93,8 @@
         "min": 150,
         "max": 450,
         "unit": "x10^3/uL",
+        "critical_low": 50,
+        "critical_high": 1000,
         "aliases": ["Platelets", "PLT", "Thrombocyte Count"]
       },
       "Neutrophils": {
@@ -186,7 +193,13 @@
             "label": "Prediabetes",
             "severity": "attention"
           },
-          { "min": 126, "label": "Diabetes", "severity": "attention" }
+          {
+            "min": 126,
+            "max": 250,
+            "label": "Diabetes",
+            "severity": "attention"
+          },
+          { "min": 250, "label": "Very High", "severity": "critical" }
         ]
       },
       "HbA1c": {
@@ -307,6 +320,7 @@
         "min": 0.4,
         "max": 4.0,
         "unit": "mIU/L",
+        "critical_high": 20.0,
         "aliases": ["Thyroid Stimulating Hormone", "Thyrotropin", "s-TSH"]
       },
       "Free T4": {

@@ -92,13 +92,24 @@ def _unpack_marker(raw):
 
 
 def _categorize_range(name, value, spec):
-    """Marker with a normal band: below min = Low, above max = High."""
+    """
+    Marker with a normal band: below min = Low, above max = High.
+    If the value crosses an optional critical_low/critical_high bound, the
+    severity is escalated to 'critical'.
+    """
+    critical_low = spec.get("critical_low")
+    critical_high = spec.get("critical_high")
+
     if value < spec["min"]:
         status = "Low"
         severity = "attention"
+        if critical_low is not None and value < critical_low:
+            severity = "critical"
     elif value > spec["max"]:
         status = "High"
         severity = "attention"
+        if critical_high is not None and value > critical_high:
+            severity = "critical"
     else:
         status = "Normal"
         severity = "normal"
