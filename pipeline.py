@@ -189,7 +189,11 @@ def analyze_report(file_path: str) -> dict:
             result = _analyze_numeric(biomarkers, report_type)
 
     # Guarantee a disclaimer on every result, regardless of type or model output.
-    result["disclaimer"] = get_disclaimer(result.get("report_type"))
+    has_critical = any(
+        f.get("severity") == "critical"
+        for f in result.get("findings", [])
+    )
+    result["disclaimer"] = get_disclaimer(result.get("report_type"), has_critical=has_critical)
     return result
 
 
@@ -210,9 +214,10 @@ if __name__ == "__main__":
             source = f.get("range_source", "data")
             printed = f.get("printed_range")
             printed_note = f" [report printed: {printed}]" if printed else ""
+            flag = "  ⚠ CRITICAL" if f.get("severity") == "critical" else ""
             print(
                 f"{f['name']}: {f['value']} {unit} → {f['status']} "
-                f"({f['severity']}, normal: {normal}, via: {source}){printed_note}"
+                f"({f['severity']}, normal: {normal}, via: {source}){printed_note}{flag}"
             )
         elif f["kind"] == "narrative":
             print(f"[{f['section']}] {f['finding_text']}")
