@@ -1,27 +1,40 @@
-# Blood Report Analyser
+# Health Report Analyzer
 
-An **AI-powered blood report analysis pipeline**, built with Python and
-FastAPI. Upload a photo of a blood test report, and the system uses a
+An **AI-powered medical report analysis pipeline**, built with Python and
+FastAPI. Upload a photo or PDF of a lab report, and the system uses a
 **vision-language model (VLM)** to extract biomarker values, a deterministic
-rules engine to flag abnormal ones, and **Retrieval-Augmented Generation
-(RAG)** to produce grounded, personalized, non-diagnostic health guidance.
+rules engine to categorize them by report type, and **Retrieval-Augmented
+Generation (RAG)** to produce grounded, structured, non-diagnostic health
+guidance.
+
+Originally a blood-report-only tool, it has since been generalized into a
+multi-report-type **Health Report Analyzer** that currently supports five
+report types: **blood (CBC), diabetes, lipid, thyroid, and vitamins.**
 
 Built as a hands-on learning project to explore real-world **AI engineering**
-end to end: multimodal LLM inference, structured output extraction,
-embeddings, semantic search, RAG, and production-minded concerns like
-rate-limit resilience, multi-model fallback, and mock-mode testing.
+end to end: multimodal LLM inference, structured output extraction, embeddings,
+semantic search, type-filtered RAG, and production-minded concerns like
+multi-provider abstraction, rate-limit resilience, multi-model fallback,
+guaranteed safety framing, and mock-mode testing.
 
 > ⚠️ **Educational project only.** Not a medical device, and not a substitute
 > for professional medical advice. All generated guidance is general and
 > non-diagnostic, and always recommends consulting a licensed doctor.
 
-> This repo used to also contain a React frontend; it has since been split
-> out into its own separate project. This README now covers the Python/AI
-> backend exclusively.
+> **Medical content status:** the knowledge-base articles, reference ranges,
+> and critical-value thresholds are currently **AI-drafted and pending review
+> by a qualified medical professional.** They are illustrative, not clinically
+> authoritative. Do not rely on them for medical decisions.
+
+> This repo used to also contain a React frontend; it has since been split out
+> into its own separate project. This README covers the Python/AI backend
+> exclusively. (The frontend has not yet been updated to the current backend
+> response shape.)
 
 ## Contents
 
 - [What It Does](#what-it-does)
+- [Supported Report Types](#supported-report-types)
 - [Architecture](#architecture)
 - [AI / ML Concepts Demonstrated](#ai--ml-concepts-demonstrated)
 - [Tech Stack](#tech-stack)
@@ -30,8 +43,10 @@ rate-limit resilience, multi-model fallback, and mock-mode testing.
 - [Running the API](#running-the-api)
 - [Pipeline Walkthrough](#pipeline-walkthrough)
 - [Stage 1 — Vision Extraction](#stage-1--vision-extraction)
-- [Stage 2 — Categorization](#stage-2--categorization)
-- [Stage 3 & 4 — RAG: Retrieval and Grounded Generation](#stage-3--4--rag-retrieval-and-grounded-generation)
+- [Stage 2 — Detection, Normalization & Categorization](#stage-2--detection-normalization--categorization)
+- [Stage 3 & 4 — Type-Filtered RAG](#stage-3--4--type-filtered-rag)
+- [Reference Data Model](#reference-data-model)
+- [Safety Framing: Disclaimers & Critical Values](#safety-framing-disclaimers--critical-values)
 - [Resilience: Retries & Multi-Model Fallback](#resilience-retries--multi-model-fallback)
 - [Mock Mode](#mock-mode)
 - [API Reference](#api-reference)
@@ -43,165 +58,178 @@ rate-limit resilience, multi-model fallback, and mock-mode testing.
 
 ## What It Does
 
-1. A client uploads an image of a blood test report to the API.
+1. A client uploads an image or PDF of a lab report to the API.
 2. The FastAPI backend runs it through an AI pipeline:
-   - A **vision-language model (VLM)** reads the image and extracts
-     biomarker name/value pairs as structured JSON — no OCR library, no
-     manual parsing, just a multimodal LLM call with a tightly constrained
-     prompt.
-   - Each value is **categorized** (High / Low / Normal) against a
-     reference-range table — a deterministic, non-AI step, deliberately kept
-     rule-based rather than delegated to the model.
-   - For every abnormal biomarker, the system performs **semantic
+   - A **vision-language model (VLM)** reads the report and extracts each
+     biomarker's name, value, on-report unit, and printed reference range as
+     structured JSON — no OCR library, just a multimodal LLM call with a
+     tightly constrained prompt. PDFs are rendered to page images first; a
+     multi-page report is merged into one, and an unreadable page is skipped
+     (and reported) rather than failing the whole report.
+   - Extracted names are **normalized** to canonical names (e.g. `Hb` →
+     `Hemoglobin`), the **report type is detected** from the marker names, and
+     each value is **categorized** against that type's reference data — a
+     deterministic, non-AI step, deliberately kept rule-based.
+   - For every abnormal finding, the system performs **type-filtered semantic
      retrieval**: it embeds a query, searches a **vector store** of
-     biomarker-guidance articles by **cosine similarity**, and pulls back
-     the most relevant chunks (**RAG retrieval**).
-   - An LLM then **generates** personalized guidance, explicitly instructed
-     to use *only* the retrieved context — a **grounding** strategy that
-     reduces hallucination risk — and to always end with a doctor-consult
-     disclaimer.
-3. The API returns the categorized biomarkers and the generated advice as
-   JSON.
+     report-type-tagged guidance articles by **cosine similarity**, and pulls
+     back only chunks matching that report type (**RAG retrieval**).
+   - An LLM then **generates structured, per-finding** guidance, explicitly
+     instructed to use *only* the retrieved context — a **grounding** strategy
+     that reduces hallucination risk.
+3. The API returns the report type, categorized findings, structured advice,
+   a guaranteed disclaimer, and any skipped pages as JSON.
+
+## Supported Report Types
+
+| Type | Example markers | Notes |
+|---|---|---|
+| **blood** (CBC) | Hemoglobin, WBC, Platelets, RBC, MCV… | Range markers; several have critical thresholds |
+| **diabetes** | HbA1c, Fasting Blood Glucose | Named bands (Normal / Prediabetes / Diabetes / Very High) |
+| **lipid** | Total Cholesterol, LDL, HDL, Triglycerides | Named tiers (Optimal … Very High); HDL inverted |
+| **thyroid** | TSH, Free T4, Free T3, Total T4/T3 | Range markers; TSH has a critical threshold |
+| **vitamins** | Vitamin D, Vitamin B12 | Vitamin D is one-sided (higher is better) |
+
+An unrecognized report returns an honest "not supported" result rather than a
+guess.
 
 ## Architecture
 
-One request, traced top to bottom — image in at the top, advice back out at
+One request, traced top to bottom — report in at the top, advice back out at
 the bottom:
 
 ```
 ┌──────────────────────────────────────────────────┐
 │                    API Client                     │
-│         (any HTTP client, e.g. a frontend)        │
+│      (any HTTP client, or an MCP client)          │
 └──────────────────────────────────────────────────┘
-                          │
-                          │  1. upload report image
+                          │  1. upload report (image or PDF)
                           │     POST /analyze-report (multipart/form-data)
                           ▼
 ┌──────────────────────────────────────────────────┐
-│                 FastAPI Backend                  │
-│                    (main.py)                     │
+│                 FastAPI Backend (main.py)         │
 └──────────────────────────────────────────────────┘
-                          │
-                          │  2. pipeline.analyze_report(image)
+                          │  2. pipeline.analyze_report(file)
                           ▼
 ┌──────────────────────────────────────────────────┐
-│           Stage 1 · Vision Extraction            │
-│        VLM reads image -> biomarker JSON         │
-│       OpenRouter vision models + fallback        │
+│      Stage 1 · Vision Extraction                  │
+│  PDF→page images (skip bad pages) → VLM reads     │
+│  → {name: {value, unit, printed_range}}           │
+│  Anthropic Claude vision + model fallback         │
 └──────────────────────────────────────────────────┘
-                          │
                           ▼
 ┌──────────────────────────────────────────────────┐
-│             Stage 2 · Categorization             │
-│          rule-based High / Low / Normal          │
-│             vs. reference_ranges.py              │
+│   Stage 2 · Normalize → Detect → Categorize       │
+│  name resolution → report-type detection →        │
+│  rule-based status + severity vs report_data.json │
+│  (deterministic; no model call)                   │
 └──────────────────────────────────────────────────┘
-                          │
                           ▼
 ┌──────────────────────────────────────────────────┐
-│             Stage 3 · RAG Retrieval              │
-│     embed query -> cosine similarity search      │
-│     over vector_store.json (article chunks)      │
+│   Stage 3 · Type-Filtered RAG Retrieval           │
+│  embed query → cosine search over vector_store,   │
+│  hard-filtered to the detected report type        │
+│  (embeddings: Google Gemini)                      │
 └──────────────────────────────────────────────────┘
-                          │
                           ▼
 ┌──────────────────────────────────────────────────┐
-│          Stage 4 · Grounded Generation           │
-│       LLM writes advice from top-k chunks        │
-│        OpenRouter text models + fallback         │
+│   Stage 4 · Grounded Structured Generation        │
+│  LLM writes {summary, findings:[{name, advice}]}  │
+│  from retrieved chunks; Anthropic Claude + fallback│
 └──────────────────────────────────────────────────┘
-                          │
-                          │  3. returns {biomarkers, categorized, advice}
+                          │  3. {report_type, findings, advice,
+                          │       disclaimer, skipped_pages}
                           ▼
 ┌──────────────────────────────────────────────────┐
-│                 FastAPI Backend                  │
-└──────────────────────────────────────────────────┘
-                          │
-                          │  4. JSON response
-                          ▼
-┌──────────────────────────────────────────────────┐
-│                    API Client                     │
+│                 FastAPI Backend → JSON response   │
 └──────────────────────────────────────────────────┘
 ```
 
-Stages 1 and 4 are the two points where the pipeline calls out to an LLM on
-OpenRouter (with model fallback); stage 3 is a local, non-network semantic
-search over `vector_store.json`; stage 2 is plain deterministic Python, no
-model call at all.
+Stages 1 and 4 call **Anthropic Claude**; stage 3 embeds via **Google Gemini**
+and does a local cosine search; stage 2 is plain deterministic Python, no model
+call. (Two providers because Anthropic has no embedding model — see
+[Tech Stack](#tech-stack).)
 
 ## AI / ML Concepts Demonstrated
 
-This project is intentionally built to touch a broad slice of practical AI
-engineering, rather than depending on a single high-level framework:
-
-- **Multimodal LLM inference** — a vision-language model (VLM) reads an
-  image directly (base64-encoded, inlined in the prompt) rather than going
-  through a separate OCR pipeline.
-- **Structured output extraction** — the model is prompted to return *only*
-  strict JSON, which is then parsed directly. No function-calling API is
-  used; structure is enforced entirely through prompt design.
-- **Prompt engineering** — tightly scoped instructions (exact format
-  examples, explicit constraints like "no markdown formatting") to get
-  reliable, parseable output from free-tier models.
-- **Embeddings** — text is converted into dense vector representations via
-  an embedding model, both for the knowledge-base articles (offline, at
-  index-build time) and for runtime queries.
-- **Vector store & semantic search** — a lightweight, from-scratch vector
-  store (a JSON file of `{text, embedding}` pairs) queried via manual
-  **cosine similarity**, deliberately avoiding a managed vector database to
-  make the retrieval mechanics fully transparent.
-- **Chunking** — knowledge-base articles are split into overlapping,
-  fixed-size word chunks so retrieval can surface a focused passage instead
-  of an entire article.
-- **Retrieval-Augmented Generation (RAG)** — retrieved chunks are injected
-  into the generation prompt as context, so the model's output is grounded
-  in a curated knowledge base instead of relying purely on parametric
-  (pretrained) knowledge.
-- **Grounding & hallucination mitigation** — the generation prompt
-  explicitly restricts the model to *only* the retrieved context and
-  forbids diagnosis or medication recommendations.
-- **Model fallback & resilience** — both the vision and text generation
-  steps iterate through a list of models with retries and backoff, so a
-  rate-limited or unavailable free-tier model doesn't take down the whole
-  pipeline.
-- **Mock mode** — an `MOCK_AI` environment flag swaps in canned
-  biomarkers/advice, letting the API and app plumbing be tested end-to-end
-  without burning LLM quota or waiting on network calls.
+- **Multimodal LLM inference** — a vision-language model reads the report image
+  directly (base64, in an Anthropic image content block) rather than via a
+  separate OCR pipeline.
+- **Structured output extraction** — the model returns strict JSON for both
+  extraction and advice; parsed defensively with a fence-tolerant helper
+  (`json_utils.extract_json`) because real models often wrap JSON in code
+  fences despite instructions.
+- **Prompt engineering** — tightly scoped instructions with exact format
+  examples for reliable, parseable output.
+- **Multi-provider abstraction** — generation/vision on Anthropic, embeddings
+  on Google Gemini; a real lesson that provider APIs are *not* interchangeable
+  and that not every provider offers every capability.
+- **Embeddings & vector store** — a lightweight from-scratch vector store (a
+  JSON file of `{text, embedding, type}` records) queried via manual **cosine
+  similarity**, deliberately avoiding a managed vector DB to keep retrieval
+  mechanics transparent.
+- **Chunking** — articles split into overlapping fixed-size word chunks.
+- **Type-filtered RAG** — retrieved chunks are **hard-filtered by report type**
+  before scoring, so a lipid finding can never retrieve a thyroid article.
+- **Grounding & hallucination mitigation** — the generation prompt restricts
+  the model to *only* the retrieved context and forbids diagnosis or medication
+  advice.
+- **Structured, per-finding output** — advice is returned as
+  `{summary, findings:[{name, advice}]}`, not one blob.
+- **Guaranteed safety framing** — a doctor-consult disclaimer is attached in
+  code (not left to the model), so it's present on every response, including
+  fallback and unknown-report paths.
+- **Graded severity** — findings carry `normal` / `attention` / `critical` /
+  `unassessed`, with critical values escalating the disclaimer calmly.
+- **Model fallback & resilience** — vision and text steps iterate a list of
+  models with retries/backoff.
+- **Graceful partial failure** — an unreadable PDF page is skipped and
+  reported, not fatal.
+- **Mock mode** — a `MOCK_AI` flag swaps in canned per-type data for testing
+  without spending quota.
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
 | Backend | Python, FastAPI, Uvicorn |
-| LLM provider | [OpenRouter](https://openrouter.ai) (free-tier models), via the OpenAI-compatible SDK |
-| Vision-language model | `google/gemma-4-31b-it:free` (+ fallback models) |
-| Embedding model | `nvidia/llama-nemotron-embed-vl-1b-v2:free` |
+| Text + vision LLM | [Anthropic Claude](https://www.anthropic.com) (`claude-sonnet-4-5`, with `claude-haiku-4-5` fallback) |
+| Embeddings | [Google Gemini](https://ai.google.dev) (`gemini-embedding-2-preview`, 3072-dim) |
 | Vector store | Local JSON file (`vector_store.json`) — no external vector DB |
-| MCP server | [FastMCP](https://github.com/jlowin/fastmcp), mounted into the FastAPI app; exposes an `analyze_blood_report` tool to MCP-compatible clients (e.g. ChatGPT) |
-| Tunneling (dev) | [ngrok](https://ngrok.com) — exposes the local API/MCP server over a public HTTPS URL for remote clients |
+| Reference data | `report_data.json` — per-type markers, ranges, aliases, disclaimers |
+| MCP server | [FastMCP](https://github.com/jlowin/fastmcp), mounted into the FastAPI app |
+| Tunneling (dev) | [ngrok](https://ngrok.com) — public HTTPS URL for remote MCP clients |
+
+> **Why two providers?** Anthropic does not offer an embedding model, so
+> embeddings use Google Gemini while generation/vision use Claude. Model IDs
+> are volatile config, not fixed architecture.
 
 ## Project Structure
 
 ```
-blood-report-analyser/
+health-report-analyzer/
 ├── main.py                 # FastAPI app: /analyze-report, /upload, mounts MCP at /mcp
 ├── mcp_server/
-│   └── server.py            # FastMCP server: analyze_blood_report tool
-├── pipeline.py              # Orchestrates the full pipeline (image → advice)
-├── categorize.py            # Rule-based High/Low/Normal categorization
-├── reference_ranges.py      # Biomarker normal-range reference chart
-├── load_articles.py         # Loads knowledge-base articles from disk
-├── chunker.py                # Splits article text into overlapping chunks
-├── embedder.py                # Text → embedding vector, via OpenRouter
-├── build_vector_store.py      # One-time script: chunk + embed all articles
-├── retriever.py                # Semantic search via cosine similarity
-├── advisor.py                   # Generates grounded advice using RAG
-├── mock_data.py                  # Canned biomarkers/advice for MOCK_AI mode
-├── articles/                      # RAG knowledge base (biomarker guidance)
-├── uploads/                        # Images uploaded via /upload (gitignored)
-├── vector_store.json              # Generated embeddings (gitignored)
-├── sample_report.png              # Synthetic sample report for testing
-└── playground.py                   # Scratch file for exploring concepts
+│   └── server.py            # FastMCP server: analyze tool
+├── pipeline.py              # Orchestrates the pipeline (file → advice); PDF handling; router
+├── detector.py              # Report-type detection + disclaimer accessor (reads report_data.json)
+├── name_resolver.py         # Normalizes lab-specific marker names → canonical
+├── categorize.py            # Rule-based status + severity (range / direction / bands)
+├── report_data.json         # Per-type reference data: markers, ranges, aliases, disclaimers, critical thresholds
+├── load_articles.py         # Loads knowledge-base articles from type subfolders, tagged by type
+├── chunker.py               # Splits article text into overlapping chunks
+├── embedder.py              # Text → embedding vector (Google Gemini), with retry
+├── build_vector_store.py    # One-time script: chunk + embed all articles → vector_store.json (type-tagged)
+├── retriever.py             # Cosine similarity search, hard-filtered by report type
+├── advisor.py               # RAG prompt + structured grounded advice (Anthropic), with fallback
+├── json_utils.py            # Fence-tolerant JSON parsing shared by extraction and advice
+├── mock_data.py             # Per-type canned biomarkers + advice for MOCK_AI mode
+├── pdf_utils.py             # Renders PDF pages to images (PyMuPDF)
+├── articles/                # RAG knowledge base — 21 articles in type subfolders (blood/, lipid/, …)
+├── uploads/                 # Images uploaded via /upload (gitignored)
+├── vector_store.json        # Generated embeddings (gitignored)
+├── sample_report.png        # Synthetic sample report for testing
+└── playground.py            # Scratch file
 ```
 
 ## Setup
@@ -210,425 +238,389 @@ blood-report-analyser/
 python3 -m venv venv
 source venv/bin/activate      # on Windows: venv\Scripts\activate
 
-pip install fastapi uvicorn openai python-dotenv numpy pillow fastmcp httpx
+pip install fastapi uvicorn anthropic google-genai python-dotenv numpy pillow fastmcp httpx pymupdf
 ```
 
 Create a `.env` file in the repo root:
 
 ```bash
-OPENROUTER_API_KEY=your-openrouter-key-here
+ANTHROPIC_API_KEY=your-anthropic-key-here
+GEMINI_API_KEY=your-gemini-key-here
 MOCK_AI=false
+MOCK_REPORT=blood
 BACKEND_API_URL=http://127.0.0.1:8001
 ```
 
-- `OPENROUTER_API_KEY` — API key for [OpenRouter](https://openrouter.ai),
-  which proxies requests to various free-tier LLMs using an
-  OpenAI-compatible API. Every model call in this project (vision
-  extraction, embeddings, advice generation) goes through the same
-  `OpenAI` client, just pointed at OpenRouter's `base_url`.
-- `MOCK_AI` — when `true`, skips all real model calls and returns canned
-  data. See [Mock Mode](#mock-mode).
-- `BACKEND_API_URL` — base URL the MCP server resolves relative
-  `/uploads/...` image paths against (see
-  [MCP Server & ChatGPT Integration](#mcp-server--chatgpt-integration)).
-  Defaults to `http://127.0.0.1:8001`.
+- `ANTHROPIC_API_KEY` — for Claude (vision + text generation).
+- `GEMINI_API_KEY` — for Google Gemini (embeddings). Anthropic has no embedding
+  model, hence the second provider.
+- `MOCK_AI` — when `true`, skips all real model calls and returns canned data.
+  See [Mock Mode](#mock-mode).
+- `MOCK_REPORT` — which mock report type to return in mock mode (`blood`,
+  `diabetes`, `lipid`, `thyroid`, `vitamins`). Defaults to `blood`. Ignored in
+  real mode (the type is detected from the actual report).
+- `BACKEND_API_URL` — base URL the MCP server resolves relative `/uploads/...`
+  paths against. Defaults to `http://127.0.0.1:8001`.
 
 Before running the pipeline for the first time, build the RAG vector store
-(one-time — only needs re-running if you edit/add articles):
+(one-time — only re-run if you edit/add articles):
 
 ```bash
 python3 build_vector_store.py
 ```
 
-This reads every article in `articles/`, chunks it, embeds each chunk, and
-writes the result to `vector_store.json` (gitignored — regenerate locally).
+This reads every article in `articles/<type>/`, chunks it, embeds each chunk
+(Google Gemini), tags it with its report type, and writes `vector_store.json`
+(gitignored — regenerate locally). Note: changing the embedding model changes
+the vector dimension and requires a full rebuild.
 
 ## Running the API
 
 ```bash
-uvicorn main:app --reload --port 8001
+uvicorn main:app --port 8001
 ```
 
-This single process serves the REST API (`/analyze-report`, `/upload`),
-the uploaded-image static files (`/uploads/...`), and the MCP server
-(`/mcp`) — see [MCP Server & ChatGPT Integration](#mcp-server--chatgpt-integration)
-for wiring this up to a remote client like ChatGPT.
+> **Do not use `--reload` for real-mode runs** — it can restart the process
+> mid-request during a long LLM call and discard in-progress work.
 
-You can also run the pipeline directly from the command line without the API
-layer at all:
+This single process serves the REST API (`/analyze-report`, `/upload`), the
+uploaded-image static files (`/uploads/...`), and the MCP server (`/mcp`).
+
+You can also run the pipeline directly from the command line:
 
 ```bash
-python3 pipeline.py
+python3 pipeline.py                  # runs against sample_report.png
+python3 pipeline.py path/to/file.pdf # runs against any image or PDF
 ```
 
-This runs `analyze_report()` against `sample_report.png` and prints the
-categorized biomarkers and generated advice to stdout — useful for quickly
-testing pipeline changes without spinning up the server.
+This prints the report type, categorized findings (with status, severity, and
+range provenance), structured advice, the disclaimer, and any skipped pages.
 
-> Want to test the app without making real LLM calls? Set `MOCK_AI=true` in
-> `.env` — see [Mock Mode](#mock-mode) for details.
+> Want to test without real LLM calls? Set `MOCK_AI=true` in `.env` — see
+> [Mock Mode](#mock-mode).
 
 ## Pipeline Walkthrough
 
-The entire pipeline is one function: `analyze_report(image_path)` in
-[pipeline.py](pipeline.py). It's called by both the FastAPI endpoint and the
-CLI entry point, so there's a single source of truth for "what does
-analyzing a report actually do."
+The entire pipeline is one function: `analyze_report(file_path)` in
+[pipeline.py](pipeline.py), called by the FastAPI endpoint, the MCP tool, and
+the CLI — a single source of truth. Simplified:
 
 ```python
-def analyze_report(image_path: str) -> dict:
-    biomarkers = extract_biomarkers(image_path)   # Stage 1: Vision LLM
-    categorized = categorize(biomarkers)           # Stage 2: rule-based
-    vector_store = load_vector_store()
-    advice = generate_advice(categorized, vector_store)  # Stage 3+4: RAG
-    return {"biomarkers": biomarkers, "categorized": categorized, "advice": advice}
+def analyze_report(file_path: str) -> dict:
+    # Stage 1: vision extraction (PDF pages merged; bad pages skipped)
+    biomarkers, skipped_pages = _extract_biomarkers_from_pdf(file_path) \
+        if file_path.endswith(".pdf") else (extract_biomarkers(file_path), [])
+
+    biomarkers = resolve_biomarkers(biomarkers)      # normalize names
+    report_type = detect_report_type(biomarkers)     # detect type
+
+    if report_type == "unknown":
+        result = {...unsupported...}                 # honest early return
+    else:
+        result = _analyze_numeric(biomarkers, report_type)   # categorize + RAG advice
+
+    result["disclaimer"] = get_disclaimer(report_type, has_critical=...)  # guaranteed
+    result["skipped_pages"] = skipped_pages
+    return result
 ```
 
 ## Stage 1 — Vision Extraction
 
-**File:** [pipeline.py](pipeline.py) → `extract_biomarkers()`
+**File:** [pipeline.py](pipeline.py) → `extract_biomarkers()`,
+`_extract_biomarkers_from_pdf()`; [pdf_utils.py](pdf_utils.py)
 
-This is a **multimodal / vision-language model (VLM)** call: the report
-image is read as bytes, base64-encoded, and sent inline as an
-`image_url` content block (using the `data:image/png;base64,...` scheme) in
-a chat completion request — no OCR engine, no template matching, no
-manual layout parsing.
+A **multimodal** call: the report image is base64-encoded and sent as an
+Anthropic **image content block**. PDFs are first rendered to page images
+(PyMuPDF); every page is extracted and merged into one result, and a page that
+fails extraction is skipped and its number reported (rather than failing the
+whole report).
 
-The prompt is deliberately narrow to coax reliable **structured output**
-out of a free-tier model that has no native JSON-mode / function-calling
-guarantee:
+The prompt requests strict JSON, one nested object per marker:
 
 ```
-This is a blood test report. Extract every biomarker name and its numeric value.
-
-Respond with ONLY a JSON object, no other text, no markdown formatting, no code fences.
-Format exactly like this example:
-{"Hemoglobin": 15.0, "Platelet Count": 265}
+Respond with ONLY a JSON object... For each test provide:
+  "value", "unit" (as printed, or ""), "printed_range" (as printed, or null)
+{
+  "Hemoglobin": {"value": 15.0, "unit": "g/dL", "printed_range": "13.0-17.0"}
+}
 ```
 
-The raw text response is parsed directly with `json.loads()`. This is a
-classic **zero-shot extraction** pattern: no fine-tuning, no few-shot
-examples beyond the one format example — just prompt-level constraint plus
-strict downstream parsing. If parsing fails, that attempt counts as an
-error and triggers the retry/fallback logic (see below).
+Output is parsed via `json_utils.extract_json`, which tolerates the markdown
+code fences models often add despite being told not to. A parse failure counts
+as an error and triggers retry/fallback.
 
-## Stage 2 — Categorization
+## Stage 2 — Detection, Normalization & Categorization
 
-**File:** [categorize.py](categorize.py), [reference_ranges.py](reference_ranges.py)
+**Files:** [name_resolver.py](name_resolver.py), [detector.py](detector.py),
+[categorize.py](categorize.py), [report_data.json](report_data.json)
 
-This stage is **deliberately not AI**. Each biomarker value is compared
-against a plain Python dict of min/max/unit reference ranges and tagged
-`High`, `Low`, `Normal`, or `Unknown (no reference range)` if the extracted
-name doesn't match anything in the table.
+This stage is **deliberately not AI**:
 
-This is a conscious design choice: numeric threshold comparison is a
-solved, deterministic problem, and using an LLM for it would add latency,
-cost, and a non-zero hallucination risk for no benefit. Reserve the LLM for
-the two things it's actually good at here — reading an image, and writing
-fluent grounded prose.
+1. **Name normalization** — extracted names are resolved to canonical names via
+   a per-marker alias map plus case/whitespace/punctuation normalization (e.g.
+   `Hb`, `HGB`, `Haemoglobin` → `Hemoglobin`). Unknown names pass through
+   unchanged rather than being mis-mapped.
+2. **Report-type detection** — the canonical names are matched against each
+   type's signature markers via set intersection; `"unknown"` if nothing
+   matches confidently.
+3. **Categorization** — each value is judged against that type's reference data.
+   Three marker kinds are supported: **range** (Low/Normal/High), **direction**
+   (one-sided, e.g. Vitamin D), and **bands** (named tiers, e.g. HbA1c's
+   Prediabetes/Diabetes). Every finding carries a uniform `status` plus a
+   `severity` (`normal` / `attention` / `critical` / `unassessed`), and the
+   report's own printed range takes precedence over the built-in range for
+   range markers (with a `range_source` provenance field).
 
-## Stage 3 & 4 — RAG: Retrieval and Grounded Generation
+## Stage 3 & 4 — Type-Filtered RAG
 
-This is the heart of the project's **Retrieval-Augmented Generation**
-implementation, split across four files that mirror the classic RAG
-pipeline stages: **load → chunk → embed → retrieve → generate**.
+**Files:** [load_articles.py](load_articles.py), [chunker.py](chunker.py),
+[embedder.py](embedder.py), [build_vector_store.py](build_vector_store.py),
+[retriever.py](retriever.py), [advisor.py](advisor.py)
 
 ### Building the knowledge base (offline, one-time)
 
-**File:** [build_vector_store.py](build_vector_store.py)
+`load_articles.py` reads every `.md` in `articles/<type>/`, tagging each with
+its report type (the subfolder name). `chunker.py` splits each into overlapping
+word chunks (60 words / 15 overlap). `embedder.py` embeds each chunk via Google
+Gemini. Every `{article, type, chunk_index, text, embedding}` record is written
+to `vector_store.json` (currently ~201 chunks across 21 articles).
 
-1. [load_articles.py](load_articles.py) reads every `.md` file in
-   [articles/](articles/) — 14 short, hand-written articles, one per
-   biomarker/condition (e.g. `anemia_low_hemoglobin.md`,
-   `hypothyroidism_high_tsh.md`).
-2. [chunker.py](chunker.py) splits each article into **overlapping,
-   fixed-size word chunks** (60 words per chunk, 15-word overlap in the
-   build script). The overlap exists so a chunk boundary doesn't cut a
-   sentence's meaning in half — a small but important detail for retrieval
-   quality.
-3. [embedder.py](embedder.py) converts each chunk into an **embedding** — a
-   dense vector representation of its meaning — via OpenRouter's
-   `nvidia/llama-nemotron-embed-vl-1b-v2:free` embedding model.
-4. Every `{article, chunk_index, text, embedding}` record is appended to a
-   list and dumped to `vector_store.json`. This is the entire **vector
-   store**: no database, no index structure beyond a flat list — simple by
-   design, to keep the retrieval mechanics (next section) fully visible
-   rather than hidden inside a library.
+### Retrieval (type-filtered)
 
-A 1-second sleep between embedding calls keeps the script within free-tier
-rate limits.
+`retrieve_relevant_chunks(query, store, top_k, report_type)` embeds the query,
+**hard-filters candidates to the given report type**, then cosine-ranks and
+returns the top-k. If no chunk matches the type, it returns nothing and the
+caller falls back to generic guidance — a lipid query can never surface a
+thyroid article.
 
-### Retrieval
+### Grounded structured generation
 
-**File:** [retriever.py](retriever.py)
+`generate_advice()` filters findings to `severity == "attention"` (or higher),
+retrieves per-finding context (type-filtered), and asks Claude for structured
+JSON:
 
-At query time, `retrieve_relevant_chunks(query, vector_store, top_k)`:
+```
+Using ONLY the reference information above, write brief, general, educational
+guidance. Do not diagnose. Do not recommend medications or dosages.
+Respond as: {"summary": "...", "findings": [{"name": "...", "advice": "..."}]}
+```
 
-1. Embeds the query text using the same embedding model (queries and
-   documents must live in the same embedding space to be comparable).
-2. Computes **cosine similarity** between the query vector and every chunk
-   embedding in the store — `dot(a, b) / (‖a‖ · ‖b‖)`, implemented directly
-   with NumPy rather than a vector-DB's built-in similarity search.
-3. Sorts and returns the `top_k` most similar chunks.
+Parsed with `json_utils.extract_json`; on failure it **degrades to
+summary-only** (the model's raw text becomes the summary) so advice is never
+lost.
 
-This is a brute-force, linear-scan **semantic search** — appropriate at
-this scale (a few hundred chunks) and intentionally transparent, at the
-cost of not scaling to a large corpus (see [Roadmap](#roadmap)).
+## Reference Data Model
 
-### Grounded generation
+All per-type data lives in [report_data.json](report_data.json) (data, not
+code), keyed by report type. Each type has a `display_name`, `category`
+(`numeric` / future `narrative`), `signature_markers` (for detection), and
+`ranges`. Each marker declares a `kind`:
 
-**File:** [advisor.py](advisor.py) → `generate_advice()`
+```json
+"Hemoglobin": { "kind": "range", "min": 13.0, "max": 17.0, "unit": "g/dL",
+                "critical_low": 7.0, "critical_high": 20.0,
+                "aliases": ["Hb", "HGB", "Haemoglobin"] }
 
-1. Filters the categorized biomarkers down to only `High`/`Low` (abnormal)
-   findings. If none are abnormal, returns a canned "all normal" message
-   with no LLM call at all.
-2. For each abnormal biomarker, builds a query like `"Hemoglobin is Low"`
-   and retrieves the single most relevant chunk (`top_k=1`) from the
-   knowledge base.
-3. Assembles a prompt containing: the findings summary, the retrieved
-   context (clearly labeled per biomarker), and an explicit instruction to
-   use **only** that context:
+"HbA1c": { "kind": "bands", "unit": "%", "aliases": ["A1c", "HBA1C"],
+           "bands": [ {"max":5.7,"label":"Normal","severity":"normal"},
+                      {"min":5.7,"max":6.5,"label":"Prediabetes","severity":"attention"},
+                      {"min":6.5,"label":"Diabetes","severity":"attention"} ] }
+```
 
-   ```
-   Using ONLY the reference information above, write brief, general,
-   educational guidance about these findings. Do not diagnose any
-   condition. Do not recommend medications or dosages. Always end by
-   recommending they consult a licensed doctor.
-   ```
+Top-level `_default_disclaimer` and `_critical_disclaimer` provide shared
+disclaimer text (types may override per-type). **These values — ranges, band
+thresholds, and critical thresholds — are illustrative and pending medical
+review.**
 
-This is the **grounding** step of RAG: rather than letting the model answer
-purely from its pretrained (parametric) knowledge — which for a health
-topic carries real hallucination risk — its output is constrained to a
-curated, reviewed knowledge base, with explicit guardrails against
-diagnosis or medication advice baked directly into the prompt.
+## Safety Framing: Disclaimers & Critical Values
+
+- **Guaranteed disclaimer** — `analyze_report` stamps a `disclaimer` field on
+  every result in code (not left to the model), so it's present on every path
+  including the degrade-to-summary and unknown-report paths.
+- **Critical values** — a value past an optional `critical_low`/`critical_high`
+  (range markers) or in a band marked `critical` gets `severity: "critical"`,
+  which escalates the result to a stronger `_critical_disclaimer`. Thresholds
+  are defined only where reasonably established and calibrated conservatively to
+  avoid false alarms; messaging stays calm and non-diagnostic.
 
 ## Resilience: Retries & Multi-Model Fallback
 
-Both LLM call sites — vision extraction ([pipeline.py](pipeline.py)) and
-text generation ([advisor.py](advisor.py)) — iterate over an ordered list of
-free-tier models:
+Both LLM call sites — vision ([pipeline.py](pipeline.py)) and text
+([advisor.py](advisor.py)) — iterate an ordered model list:
 
 ```python
-VISION_MODELS = [
-    "google/gemma-4-31b-it:free",
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-    "google/gemma-4-26b-a4b-it:free",
-]
+VISION_MODELS = ["claude-sonnet-4-5", "claude-haiku-4-5"]
+TEXT_MODELS   = ["claude-sonnet-4-5", "claude-haiku-4-5"]
 ```
 
-For each model, the code retries a configurable number of times before
-moving on to the next model in the list — in `advisor.py`, with a linear
-backoff (`attempt * 5` seconds) between retries. This is a pragmatic
-**graceful degradation** pattern for working against free-tier LLM APIs,
-which are prone to rate limiting and intermittent unavailability: a single
-model hiccup doesn't fail the whole request, it just costs a few seconds of
-fallback latency.
-
-The embedding call ([embedder.py](embedder.py)) has its own independent
-retry loop (3 attempts, same backoff strategy) since it only ever uses one
-embedding model.
+Each model is retried a few times (with linear backoff) before falling through
+to the next. The embedding call ([embedder.py](embedder.py)) has its own retry
+loop (no fallback model — a known gap, since only one embedding model is used).
 
 ## Mock Mode
 
-Set `MOCK_AI=true` in `.env` to bypass every real model call:
-
-- `extract_biomarkers()` returns `MOCK_BIOMARKERS` from
-  [mock_data.py](mock_data.py) instead of calling the vision model.
-- `generate_advice()` (invoked from `analyze_report()`) returns
-  `MOCK_ADVICE` instead of calling the text model.
-
-This lets you exercise the FastAPI endpoint end-to-end — upload, extraction,
-categorization, advice — with zero network calls and zero rate-limit risk.
-It's the fastest way to test a change or a new `/analyze-report` consumer
-without burning free-tier quota.
+Set `MOCK_AI=true` in `.env` to bypass every real model call. `MOCK_REPORT`
+selects which type to simulate. Extraction returns that type's canned
+biomarkers and advice generation returns its canned structured advice (both
+from [mock_data.py](mock_data.py), where each type owns its biomarkers *and*
+advice together). Categorization, detection, disclaimer, and result assembly
+all run for real, so mock mode exercises the full structure at zero cost — and
+mock output has the same shape as real output by construction.
 
 ## API Reference
 
 **File:** [main.py](main.py)
 
 ### `GET /`
-
-Health check. Returns `{"status": "Blood Report Analyser API is running"}`.
+Health check.
 
 ### `POST /analyze-report`
+`multipart/form-data` with a single `file` field — an **image or a PDF**. The
+file is written to a temp file, run through `analyze_report()`, and the temp
+file is deleted afterward regardless of outcome.
 
-Accepts a `multipart/form-data` upload with a single field, `file`, that
-must be an image (`Content-Type` starting with `image/`).
-
-The uploaded file is written to a temporary file on disk (the pipeline
-expects a file path, not raw bytes), passed through `analyze_report()`, and
-the temp file is deleted afterward regardless of success or failure.
-
-**Response body:**
+**Response body (shape):**
 
 ```json
 {
-  "biomarkers": { "Hemoglobin": 10.6, "...": "..." },
-  "categorized": {
-    "Hemoglobin": { "value": 10.6, "status": "Low", "normal_range": "13.0–17.0 g/dL" }
+  "report_type": "blood",
+  "findings": [
+    { "kind": "numeric", "name": "Hemoglobin", "value": 10.6, "unit": "g/dL",
+      "status": "Low", "severity": "attention",
+      "normal_range": "13.0-17.0 g/dL", "printed_range": "13.0-17.0",
+      "range_source": "report" }
+  ],
+  "advice": {
+    "summary": "…overall note ending with a doctor-consult reminder…",
+    "findings": [ { "name": "Hemoglobin", "advice": "…" } ]
   },
-  "advice": "Your Hemoglobin is slightly below the typical range... (etc.) ...consult a licensed doctor."
+  "disclaimer": "This analysis is educational only and is not a medical diagnosis…",
+  "skipped_pages": []
 }
 ```
 
-**Error responses:**
+An unrecognized report returns `report_type: "unknown"`, empty `findings`, and
+an honest unsupported message in `advice`.
 
-- `400` — uploaded file is not an image.
-- `500` — analysis failed (e.g. vision model returned unparseable output
-  after exhausting all fallbacks, or embedding/generation failed).
-
-CORS is currently wide open (`allow_origins=["*"]`) for local development —
-this should be restricted to the actual consuming origin(s) before any
-real deployment.
+**Error responses:** `400` (file is not an image or PDF), `500` (analysis
+failed after exhausting fallbacks). CORS is wide open (`allow_origins=["*"]`)
+for local development — restrict before any deployment.
 
 ### `POST /upload`
-
-Accepts a `multipart/form-data` upload with a single field, `file`, that
-must be an image. Unlike `/analyze-report`, this endpoint does not run the
-pipeline — it just saves the file to `uploads/` under a generated UUID
-filename and returns a URL to it:
-
-```json
-{ "url": "/uploads/0cd76a6d-534d-4919-a4aa-27f6b85fe947.png" }
-```
-
-This exists so a client can hand the MCP server a stable, fetchable
-**URL** for an image (see below), rather than passing raw image bytes
-through the tool call.
+Saves an uploaded image/PDF to `uploads/` under a UUID filename and returns
+`{ "url": "/uploads/<uuid>.<ext>" }`, so a client can hand the MCP server a
+stable fetchable URL rather than raw bytes.
 
 ## MCP Server & ChatGPT Integration
 
 **File:** [mcp_server/server.py](mcp_server/server.py)
 
-The pipeline is also exposed as a tool over the **Model Context Protocol
-(MCP)**, using [FastMCP](https://github.com/jlowin/fastmcp), so any
-MCP-compatible client — ChatGPT, Claude, or otherwise — can call it directly
-as a tool during a conversation, instead of a human hitting the REST API.
+The pipeline is exposed as a tool over the **Model Context Protocol (MCP)**
+using [FastMCP](https://github.com/jlowin/fastmcp), so an MCP-compatible client
+(ChatGPT, Claude, etc.) can call it during a conversation:
 
 ```python
 @mcp.tool
-def analyze_blood_report(image_url: str) -> dict:
+def analyze_blood_report(file_url: str) -> dict:
     ...
 ```
 
-The tool takes an `image_url` rather than raw base64 bytes, since that's
-the shape most MCP/agent clients pass a "here's an image" argument in. A
-relative `/uploads/...` path is resolved against `BACKEND_API_URL`; the
-image is then fetched with `httpx`, run through the exact same
-`analyze_report()` pipeline used by `/analyze-report`, and the categorized
-biomarkers + advice are returned as the tool result.
+The tool takes a `file_url` (image **or** PDF); a relative `/uploads/...` path
+is resolved against `BACKEND_API_URL`, the file is fetched with `httpx` (its
+extension preserved so PDFs route correctly), run through the same
+`analyze_report()` pipeline, and the result returned. The FastMCP app is mounted
+into the main FastAPI app so one process/port/tunnel covers the REST API, static
+uploads, and MCP.
 
-Rather than running as a standalone process, the FastMCP app is mounted
-directly into the main FastAPI app in [main.py](main.py):
-
-```python
-mcp_app = mcp_server_instance.http_app(path="/")
-app = FastAPI(title="Blood Report Analyser API", lifespan=mcp_app.lifespan)
-app.mount("/mcp", mcp_app)
-```
-
-This keeps everything — the REST API, the uploaded-image static files, and
-the MCP endpoint — behind a single port/process, so exposing the app
-externally only requires one tunnel.
+> **Note:** the tool is still named `analyze_blood_report` for backward
+> compatibility (renaming it requires recreating the ChatGPT connector, which
+> can cache the old schema). Its docstring reflects that it now accepts images
+> or PDFs of health reports.
 
 ### Exposing it to a remote client (ChatGPT) via ngrok
 
-ChatGPT's connector/tool setup needs a **public HTTPS URL**, both for the
-MCP endpoint itself and for any image the tool is asked to fetch (a
-`localhost` URL means nothing to ChatGPT's servers). For local development,
-[ngrok](https://ngrok.com) bridges that gap by tunneling a public URL to the
-local server:
+ChatGPT needs a public HTTPS URL for both the MCP endpoint and any fetched
+image. For local dev, [ngrok](https://ngrok.com) tunnels one:
 
 ```bash
-uvicorn main:app --reload --port 8001
+uvicorn main:app --port 8001
 ngrok http 8001
 ```
 
-ngrok prints a public forwarding URL, e.g.
-`https://grievance-flatware-contently.ngrok-free.dev -> http://localhost:8001`
-(a free ngrok URL like this is randomly generated per session and changes
-every time the tunnel restarts). That URL is then registered as the
-connector's MCP server URL in ChatGPT
-(`https://<ngrok-subdomain>.ngrok-free.dev/mcp`).
-
-End-to-end flow once connected:
-
-1. Upload a report image via `POST /upload` (through the ngrok URL) to get
-   back a public, fetchable image URL.
-2. In a ChatGPT conversation, ask it to analyze the report at that URL.
-   ChatGPT calls `analyze_blood_report(image_url=...)` on the connected
-   MCP server.
-3. The server fetches the image, runs the full pipeline, and returns the
-   categorized biomarkers + advice — which ChatGPT then renders as a
-   conversational answer.
-
-This was verified working live: pointing ChatGPT at an uploaded report
-through the ngrok tunnel returned a full categorized biomarker table (e.g.
-Hemoglobin 10.6 g/dL — Low, WBC 13.8 ×10³/µL — High, Platelets 128 ×10³/µL —
-Low) plus grounded, non-diagnostic guidance ending in a doctor-consult
-recommendation — with the response correctly surfacing that it came from
-`MOCK_AI` test-mode data.
+Register `https://<ngrok-subdomain>.ngrok-free.dev/mcp` as the connector's MCP
+URL. (Free ngrok URLs are random and change per session. ngrok's free tier
+allows only one tunnel at a time — a reason the MCP server is mounted into the
+main app rather than run separately.)
 
 ## File-by-File Reference
 
 | File | Role |
 |---|---|
-| [main.py](main.py) | FastAPI app, CORS config, `/analyze-report` + `/upload` endpoints, mounts MCP at `/mcp` |
-| [mcp_server/server.py](mcp_server/server.py) | FastMCP server exposing `analyze_blood_report` as an MCP tool |
-| [pipeline.py](pipeline.py) | `analyze_report()` orchestrator; vision extraction + model fallback list |
-| [categorize.py](categorize.py) | Rule-based High/Low/Normal comparison |
-| [reference_ranges.py](reference_ranges.py) | Biomarker → {min, max, unit} table |
-| [load_articles.py](load_articles.py) | Reads all `.md` files from `articles/` into memory |
-| [chunker.py](chunker.py) | Word-based overlapping text chunker |
-| [embedder.py](embedder.py) | `embed_text()` — text → embedding vector, with retry |
-| [build_vector_store.py](build_vector_store.py) | One-time script: chunk + embed every article → `vector_store.json` |
-| [retriever.py](retriever.py) | `load_vector_store()`, cosine similarity, `retrieve_relevant_chunks()` |
-| [advisor.py](advisor.py) | RAG prompt assembly + grounded advice generation, with model fallback |
-| [mock_data.py](mock_data.py) | Canned biomarkers/advice for `MOCK_AI=true` |
-| [articles/](articles/) | The RAG knowledge base — 14 biomarker/condition guidance articles |
-| [uploads/](uploads/) | Images saved via `/upload`, for handing MCP clients a fetchable URL (gitignored) |
-| [sample_report.png](sample_report.png) | Synthetic sample report image for manual testing |
-| [playground.py](playground.py) | Scratch file for exploring snippets outside the main pipeline |
+| [main.py](main.py) | FastAPI app, CORS, `/analyze-report` + `/upload`, mounts MCP at `/mcp` |
+| [mcp_server/server.py](mcp_server/server.py) | FastMCP server exposing the analyze tool |
+| [pipeline.py](pipeline.py) | `analyze_report()` router; vision extraction; PDF handling; CLI |
+| [pdf_utils.py](pdf_utils.py) | Renders PDF pages to images (PyMuPDF) |
+| [name_resolver.py](name_resolver.py) | Normalizes lab names → canonical (alias map) |
+| [detector.py](detector.py) | Report-type detection; disclaimer accessor |
+| [categorize.py](categorize.py) | Rule-based status + severity (range / direction / bands) |
+| [report_data.json](report_data.json) | Per-type markers, ranges, aliases, disclaimers, critical thresholds |
+| [load_articles.py](load_articles.py) | Loads articles from type subfolders, tagged by type |
+| [chunker.py](chunker.py) | Word-based overlapping chunker |
+| [embedder.py](embedder.py) | `embed_text()` — text → embedding (Google Gemini), with retry |
+| [build_vector_store.py](build_vector_store.py) | One-time: chunk + embed + type-tag → `vector_store.json` |
+| [retriever.py](retriever.py) | Type-filtered cosine similarity search |
+| [advisor.py](advisor.py) | Structured grounded advice (Anthropic), with fallback |
+| [json_utils.py](json_utils.py) | Fence-tolerant JSON parsing (shared) |
+| [mock_data.py](mock_data.py) | Per-type canned biomarkers + advice for `MOCK_AI` |
+| [articles/](articles/) | RAG knowledge base — 21 articles in type subfolders |
+| [uploads/](uploads/) | Uploaded files (gitignored) |
+| [sample_report.png](sample_report.png) | Synthetic sample report |
+| [playground.py](playground.py) | Scratch file |
 
 ## Extending the Knowledge Base
 
-To add coverage for a new biomarker or condition:
+To add coverage for a new condition within an existing report type:
 
-1. Add a new `.md` file to [articles/](articles/) with general, factual
-   guidance (no diagnosis, no dosages — the generation prompt assumes the
-   source material is itself safe to surface directly).
-2. Add its reference range to `REFERENCE_RANGES` in
-   [reference_ranges.py](reference_ranges.py), if you want it categorized
-   rather than falling into `Unknown (no reference range)`.
-3. Re-run `python3 build_vector_store.py` to re-chunk and re-embed
-   everything (it's a full rebuild, not incremental).
+1. Add a new `.md` file to the relevant `articles/<type>/` subfolder with
+   general, factual, non-diagnostic guidance. Keep the AI-drafted content
+   pending-review discipline until a professional signs off.
+2. Add/adjust the marker (and any aliases, critical thresholds) in
+   [report_data.json](report_data.json) under that type.
+3. Re-run `python3 build_vector_store.py` to re-chunk, re-embed, and re-tag
+   everything (a full rebuild, not incremental).
+
+To add a whole new report type, add a new top-level entry to
+`report_data.json` (with `display_name`, `category`, `signature_markers`,
+`ranges`) and a new `articles/<type>/` subfolder, then rebuild the store.
 
 ## Roadmap
 
-- [x] Vision-based biomarker extraction (multimodal LLM)
-- [x] Rule-based categorization
-- [x] RAG knowledge base (chunking, embeddings, retrieval, generation)
-- [x] Rate-limit resilience (retry + multi-model fallback)
-- [x] FastAPI service wrapping the pipeline
-- [x] MCP server exposing the pipeline as a tool (`analyze_blood_report`),
-      verified working end-to-end with ChatGPT via an ngrok tunnel
-- [ ] Restrict CORS to actual consuming origin(s) before any deployment
-- [ ] Deploy the API/MCP server behind a stable public URL instead of an
-      ephemeral ngrok tunnel
-- [ ] Incremental vector-store updates (currently a full rebuild per run)
-- [ ] Swap the flat JSON vector store + linear cosine scan for a real
-      vector database once the knowledge base grows meaningfully past a
-      few dozen articles
-- [ ] Structured output via function-calling / JSON mode, where the
-      chosen model supports it, instead of prompt-only JSON constraints
-- [ ] Automated tests (unit tests for `categorize`/`chunker`/`retriever`;
-      integration tests against `MOCK_AI=true`)
-- [ ] Evaluation harness for retrieval relevance and generation groundedness
-- [ ] Structured logging in place of `print()` statements
+- [x] Vision-based extraction (multimodal LLM), images **and PDFs**
+- [x] Multi-report-type support (blood, diabetes, lipid, thyroid, vitamins)
+- [x] Report-type detection + name normalization
+- [x] Rule-based categorization with graded severity + critical values
+- [x] On-report unit/printed-range capture with precedence + provenance
+- [x] Type-filtered RAG (chunking, Gemini embeddings, filtered retrieval)
+- [x] Structured per-finding advice with degrade-to-summary fallback
+- [x] Guaranteed disclaimers (code-enforced) with critical escalation
+- [x] Multi-provider architecture (Anthropic + Gemini)
+- [x] Resilience (retry + multi-model fallback); graceful PDF page skipping
+- [x] FastAPI service + MCP tool (images/PDFs)
+- [ ] **Medical review** of articles, reference ranges, and critical thresholds
+      by a qualified professional (the key safety gate)
+- [ ] Mixed-report support (multiple report types in one upload)
+- [ ] Reconnect the frontend to the current response shape
+- [ ] Narrative/radiology report support (extraction + safe framing)
+- [ ] Age/sex-specific reference ranges
+- [ ] MCP authentication (currently No Auth — dev only)
+- [ ] Restrict CORS; real deployment behind a stable URL
+- [ ] Automated tests; evaluation harness for retrieval/generation quality
+- [ ] Refresh remaining core docs (ARCHITECTURE, MASTER_CONTEXT, etc.)
 
 ## Disclaimer
 
 This project generates general, educational health information only. It does
 not diagnose conditions, recommend medications or dosages, and is not a
-substitute for professional medical advice. Always consult a licensed doctor
-to interpret real blood test results.
+substitute for professional medical advice. Its medical content is currently
+AI-drafted and pending professional review. Always consult a licensed doctor to
+interpret real lab results.
