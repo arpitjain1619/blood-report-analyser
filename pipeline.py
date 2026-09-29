@@ -104,24 +104,35 @@ Use the exact test names as they appear in the report."""
     raise last_error
 
 
-def _extract_biomarkers_from_pdf(pdf_path: str) -> dict:
+def _extract_biomarkers_from_pdf(pdf_path: str) -> tuple:
     """
     Renders every page of a PDF to an image, runs vision extraction on each
     page, and merges all pages' biomarkers into one combined dict
-    (Approach 1: a multi-page PDF is treated as ONE report split across pages).
+    (a multi-page PDF is treated as ONE report split across pages).
+
+    If a page can't be read (extraction fails after its retries), that page is
+    skipped rather than failing the whole report. Returns:
+        (merged_biomarkers, skipped_pages)
+    where skipped_pages is a list of 1-based page numbers that failed.
     Temp page-images are always cleaned up.
     """
     page_images = pdf_to_images(pdf_path)
     merged = {}
+    skipped_pages = []
     try:
-        for img_path in page_images:
-            page_biomarkers = extract_biomarkers(img_path)
-            merged.update(page_biomarkers)
+        for index, img_path in enumerate(page_images):
+            page_number = index + 1  # 1-based, friendlier for users
+            try:
+                page_biomarkers = extract_biomarkers(img_path)
+                merged.update(page_biomarkers)
+            except Exception as e:
+                print(f"  Could not read page {page_number}, skipping it ({e}).")
+                skipped_pages.append(page_number)
     finally:
         for img_path in page_images:
             if os.path.exists(img_path):
                 os.remove(img_path)
-    return merged
+    return merged, skipped_pages
 
 
 def _get_report_category(report_type: str) -> str:
@@ -166,8 +177,10 @@ def _analyze_narrative(biomarkers: dict, report_type: str) -> dict:
 
 
 def analyze_report(file_path: str) -> dict:
+    skipped_pages = []
+
     if file_path.lower().endswith(".pdf"):
-        biomarkers = _extract_biomarkers_from_pdf(file_path)
+        biomarkers, skipped_pages = _extract_biomarkers_from_pdf(file_path)
     else:
         biomarkers = extract_biomarkers(file_path)
 
@@ -194,6 +207,7 @@ def analyze_report(file_path: str) -> dict:
         for f in result.get("findings", [])
     )
     result["disclaimer"] = get_disclaimer(result.get("report_type"), has_critical=has_critical)
+    result["skipped_pages"] = skipped_pages
     return result
 
 
@@ -234,3 +248,10 @@ if __name__ == "__main__":
         print(advice)
     print("\n--- DISCLAIMER ---")
     print(result.get("disclaimer", ""))
+
+    skipped = result.get("skipped_pages", [])
+    if skipped:
+        print("\n--- NOTE ---")
+        pages = ", ".join(str(p) for p in skipped)
+        print(f"Some pages could not be read and were skipped: page {pages}.")
+        print("The results above are based on the pages that could be read.")
