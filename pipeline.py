@@ -24,6 +24,12 @@ VISION_MODELS = [
     "claude-haiku-4-5",
 ]
 
+# A report type needs at least this many markers to get its own full section
+# in a mixed report. Types with fewer markers are pooled into an "isolated"
+# section (shown, but flagged as low-confidence) rather than dressed up as a
+# confident typed report.
+SECTION_THRESHOLD = 2
+
 NARRATIVE_NOT_SUPPORTED_MESSAGE = (
     "This looks like a text-based (narrative) report, which we can't analyze yet. "
     "Please consult a licensed doctor to interpret your report."
@@ -35,31 +41,29 @@ UNSUPPORTED_REPORT_MESSAGE = (
 )
 
 
-def extract_biomarkers(image_path: str, max_retries_per_model: int = 1) -> dict:
+def extract_biomarkers(image_path: str, max_retries_per_model: int = 1) -> tuple:
     if MOCK_AI:
         from mock_data import get_mock_biomarkers
         mock_report = os.getenv("MOCK_REPORT", "blood")
         print(f"[MOCK_AI] Skipping real vision call, returning mock '{mock_report}' biomarkers.")
-        return get_mock_biomarkers(mock_report)
+        return get_mock_biomarkers(mock_report), None
 
     with open(image_path, "rb") as f:
         image_bytes = f.read()
     base64_image = base64.b64encode(image_bytes).decode("utf-8")
 
-    prompt_text = """This is a medical lab report. Extract every biomarker/test and its details.
+    prompt_text = """This is a medical lab report. Extract the patient's sex and every biomarker/test with its details.
 
-Respond with ONLY a JSON object, no other text, no markdown formatting, no code fences.
-For each test, provide an object with:
-  - "value": the numeric result (number only)
-  - "unit": the unit exactly as printed on the report (e.g. "g/dL", "mg/dL"), or "" if none is shown
-  - "printed_range": the reference/normal range exactly as printed on the report (e.g. "13.0-17.0"), or null if none is shown
-
-Format exactly like this example:
+Respond with ONLY a JSON object, no other text, no markdown, no code fences, in exactly this shape:
 {
-  "Hemoglobin": {"value": 15.0, "unit": "g/dL", "printed_range": "13.0-17.0"},
-  "Platelet Count": {"value": 265, "unit": "x10^3/uL", "printed_range": "150-450"}
+  "sex": "male" | "female" | null,
+  "biomarkers": {
+    "Hemoglobin": {"value": 15.0, "unit": "g/dL", "printed_range": "13.0-17.0"}
+  }
 }
 
+For "sex": use the patient's sex if clearly shown on the report, otherwise null. Do not guess.
+For each biomarker provide "value" (number), "unit" (as printed, or ""), and "printed_range" (as printed, or null).
 Use the exact test names as they appear in the report."""
 
     last_error = None
@@ -90,41 +94,51 @@ Use the exact test names as they appear in the report."""
                     timeout=30,
                 )
 
-                # Defensive check: don't assume the response is well-formed
                 if not response.content or not response.content[0].text:
                     raise ValueError(f"Model {model} returned an empty/invalid response")
 
                 raw_output = response.content[0].text
-                return extract_json(raw_output)
+                parsed = extract_json(raw_output)
+
+                sex = parsed.get("sex")
+                biomarkers = parsed.get("biomarkers", {})
+
+                # Only accept clean, expected sex values; anything else -> None,
+                # so a misread never picks a wrong variant range.
+                if sex not in ("male", "female"):
+                    sex = None
+
+                return biomarkers, sex
 
             except Exception as e:
                 last_error = e
                 print(f"  Failed ({e}).")
         print(f"Giving up on {model}, moving to next fallback model...\n")
+
     raise last_error
 
 
 def _extract_biomarkers_from_pdf(pdf_path: str) -> tuple:
     """
-    Renders every page of a PDF to an image, runs vision extraction on each
-    page, and merges all pages' biomarkers into one combined dict
-    (a multi-page PDF is treated as ONE report split across pages).
-
-    If a page can't be read (extraction fails after its retries), that page is
-    skipped rather than failing the whole report. Returns:
-        (merged_biomarkers, skipped_pages)
-    where skipped_pages is a list of 1-based page numbers that failed.
+    Renders every page of a PDF to an image, extracts each, and merges all
+    pages' biomarkers into one combined dict. Takes the first sex found across
+    pages. A page that fails extraction is skipped (not fatal) and its 1-based
+    number recorded. Returns (merged_biomarkers, skipped_pages, sex).
     Temp page-images are always cleaned up.
     """
     page_images = pdf_to_images(pdf_path)
     merged = {}
     skipped_pages = []
+    sex = None
+
     try:
         for index, img_path in enumerate(page_images):
-            page_number = index + 1  # 1-based, friendlier for users
+            page_number = index + 1
             try:
-                page_biomarkers = extract_biomarkers(img_path)
+                page_biomarkers, page_sex = extract_biomarkers(img_path)
                 merged.update(page_biomarkers)
+                if sex is None and page_sex is not None:
+                    sex = page_sex  # first page that reports a sex wins
             except Exception as e:
                 print(f"  Could not read page {page_number}, skipping it ({e}).")
                 skipped_pages.append(page_number)
@@ -132,16 +146,21 @@ def _extract_biomarkers_from_pdf(pdf_path: str) -> tuple:
         for img_path in page_images:
             if os.path.exists(img_path):
                 os.remove(img_path)
-    return merged, skipped_pages
+
+    return merged, skipped_pages, sex
 
 
-def analyze_report(file_path: str) -> dict:
+def analyze_report(file_path: str, sex: str = None) -> dict:
     skipped_pages = []
+    report_sex = None
 
     if file_path.lower().endswith(".pdf"):
-        biomarkers, skipped_pages = _extract_biomarkers_from_pdf(file_path)
+        biomarkers, skipped_pages, report_sex = _extract_biomarkers_from_pdf(file_path)
     else:
-        biomarkers = extract_biomarkers(file_path)
+        biomarkers, report_sex = extract_biomarkers(file_path)
+
+    # Precedence: sex from the report wins; else caller-supplied; else None (general range).
+    effective_sex = report_sex or sex
 
     biomarkers = resolve_biomarkers(biomarkers)
 
@@ -150,7 +169,6 @@ def analyze_report(file_path: str) -> dict:
     groups = group_markers_by_type(biomarkers)
     groups.pop("unknown", None)  # markers in no known type are set aside
 
-    SECTION_THRESHOLD = 2
     section_groups = {}      # types that earn a full section
     isolated_markers = {}    # lone markers, pooled together
 
@@ -163,11 +181,11 @@ def analyze_report(file_path: str) -> dict:
     # Build a full section for each qualifying type.
     sections = []
     for report_type, markers in section_groups.items():
-        sections.append(_build_section(markers, report_type))
+        sections.append(_build_section(markers, report_type, sex=effective_sex))
 
     # Pool any lone markers into a single "isolated" section.
     if isolated_markers:
-        sections.append(_build_isolated_section(isolated_markers))
+        sections.append(_build_isolated_section(isolated_markers, sex=effective_sex))
 
     # No recognized markers at all -> honest unknown result.
     if not sections:
@@ -184,9 +202,9 @@ def analyze_report(file_path: str) -> dict:
     }
 
 
-def _build_section(markers: dict, report_type: str) -> dict:
+def _build_section(markers: dict, report_type: str, sex: str = None) -> dict:
     """Categorize and advise one report type's markers into a full section."""
-    findings = categorize(markers, report_type)
+    findings = categorize(markers, report_type, sex=sex)
 
     if MOCK_AI:
         from mock_data import get_mock_advice
@@ -205,7 +223,7 @@ def _build_section(markers: dict, report_type: str) -> dict:
     }
 
 
-def _build_isolated_section(markers: dict) -> dict:
+def _build_isolated_section(markers: dict, sex: str = None) -> dict:
     """
     Lone markers that didn't meet the section threshold. We still categorize them
     (grouped by their own type) so status/severity show, but present them as
@@ -218,7 +236,7 @@ def _build_isolated_section(markers: dict) -> dict:
     groups = group_markers_by_type(markers)
     groups.pop("unknown", None)
     for report_type, type_markers in groups.items():
-        all_findings.extend(categorize(type_markers, report_type))
+        all_findings.extend(categorize(type_markers, report_type, sex=sex))
 
     advice = {
         "summary": (

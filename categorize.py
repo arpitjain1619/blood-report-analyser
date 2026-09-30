@@ -91,21 +91,29 @@ def _unpack_marker(raw):
     return value, printed_unit, printed_range
 
 
-def _categorize_range(name, value, spec):
+def _categorize_range(name, value, spec, sex=None):
     """
-    Marker with a normal band: below min = Low, above max = High.
-    If the value crosses an optional critical_low/critical_high bound, the
-    severity is escalated to 'critical'.
+    Range marker. If the spec has sex-specific variants and we know the sex,
+    use that variant's min/max; otherwise fall back to the general min/max.
     """
+    variants = spec.get("variants", {})
+    if sex in variants:
+        bounds = variants[sex]
+        low = bounds.get("min", spec["min"])
+        high = bounds.get("max", spec["max"])
+    else:
+        low = spec["min"]
+        high = spec["max"]
+
     critical_low = spec.get("critical_low")
     critical_high = spec.get("critical_high")
 
-    if value < spec["min"]:
+    if value < low:
         status = "Low"
         severity = "attention"
         if critical_low is not None and value < critical_low:
             severity = "critical"
-    elif value > spec["max"]:
+    elif value > high:
         status = "High"
         severity = "attention"
         if critical_high is not None and value > critical_high:
@@ -121,7 +129,7 @@ def _categorize_range(name, value, spec):
         "unit": spec.get("unit", ""),
         "status": status,
         "severity": severity,
-        "normal_range": f"{spec['min']}–{spec['max']} {spec.get('unit', '')}".strip(),
+        "normal_range": f"{low}–{high} {spec.get('unit', '')}".strip(),
     }
 
 
@@ -229,7 +237,7 @@ def _categorize_bands(name, value, spec):
     }
 
 
-def categorize(biomarkers: dict, report_type: str) -> list:
+def categorize(biomarkers: dict, report_type: str, sex: str = None) -> list:
     """
     Takes {name: {value, unit, printed_range}} plus the detected report_type,
     and returns a list of numeric finding-entries with a uniform shape.
@@ -282,7 +290,7 @@ def categorize(biomarkers: dict, report_type: str) -> list:
 
         # JSON-based judgment (all bands/direction, and range with no usable printed range)
         if marker_kind == "range":
-            finding = _categorize_range(name, value, spec)
+            finding = _categorize_range(name, value, spec, sex=sex)
         elif marker_kind == "direction":
             finding = _categorize_direction(name, value, spec)
         elif marker_kind == "bands":
