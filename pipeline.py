@@ -9,7 +9,7 @@ from advisor import generate_advice
 from pdf_utils import pdf_to_images
 from name_resolver import resolve_biomarkers
 from json_utils import extract_json
-from detector import detect_report_type, get_disclaimer
+from detector import detect_report_type, get_disclaimer, group_markers_by_type
 
 load_dotenv()
 
@@ -135,47 +135,6 @@ def _extract_biomarkers_from_pdf(pdf_path: str) -> tuple:
     return merged, skipped_pages
 
 
-def _get_report_category(report_type: str) -> str:
-    """Look up whether a report type is 'numeric' or 'narrative'."""
-    import json
-    path = os.path.join(os.path.dirname(__file__), "report_data.json")
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return data.get(report_type, {}).get("category", "numeric")
-
-
-def _analyze_numeric(biomarkers: dict, report_type: str) -> dict:
-    """The numeric pipeline: categorize values against ranges, then advise."""
-    findings = categorize(biomarkers, report_type)
-
-    if MOCK_AI:
-        from mock_data import get_mock_advice
-        mock_report = os.getenv("MOCK_REPORT", "blood")
-        print("[MOCK_AI] Skipping real advice generation, returning mock advice.")
-        advice = get_mock_advice(mock_report)
-    else:
-        vector_store = load_vector_store()
-        advice = generate_advice(findings, vector_store, report_type)
-
-    return {
-        "report_type": report_type,
-        "findings": findings,
-        "advice": advice,
-    }
-
-
-def _analyze_narrative(biomarkers: dict, report_type: str) -> dict:
-    """
-    Placeholder for narrative (text-based) reports, e.g. radiology.
-    Not built yet — see HRA-22/HRA-23. Returns an honest 'not supported' result.
-    """
-    return {
-        "report_type": report_type,
-        "findings": [],
-        "advice": NARRATIVE_NOT_SUPPORTED_MESSAGE,
-    }
-
-
 def analyze_report(file_path: str) -> dict:
     skipped_pages = []
 
@@ -186,29 +145,99 @@ def analyze_report(file_path: str) -> dict:
 
     biomarkers = resolve_biomarkers(biomarkers)
 
-    report_type = detect_report_type(biomarkers)
+    # Group markers by their report type, then split into full sections
+    # (types with enough markers) vs. isolated lone markers.
+    groups = group_markers_by_type(biomarkers)
+    groups.pop("unknown", None)  # markers in no known type are set aside
 
-    if report_type == "unknown":
-        result = {
+    SECTION_THRESHOLD = 2
+    section_groups = {}      # types that earn a full section
+    isolated_markers = {}    # lone markers, pooled together
+
+    for report_type, markers in groups.items():
+        if len(markers) >= SECTION_THRESHOLD:
+            section_groups[report_type] = markers
+        else:
+            isolated_markers.update(markers)
+
+    # Build a full section for each qualifying type.
+    sections = []
+    for report_type, markers in section_groups.items():
+        sections.append(_build_section(markers, report_type))
+
+    # Pool any lone markers into a single "isolated" section.
+    if isolated_markers:
+        sections.append(_build_isolated_section(isolated_markers))
+
+    # No recognized markers at all -> honest unknown result.
+    if not sections:
+        sections.append({
             "report_type": "unknown",
             "findings": [],
-            "advice": UNSUPPORTED_REPORT_MESSAGE,
-        }
-    else:
-        category = _get_report_category(report_type)
-        if category == "narrative":
-            result = _analyze_narrative(biomarkers, report_type)
-        else:
-            result = _analyze_numeric(biomarkers, report_type)
+            "advice": {"summary": UNSUPPORTED_REPORT_MESSAGE, "findings": []},
+            "disclaimer": get_disclaimer(None),
+        })
 
-    # Guarantee a disclaimer on every result, regardless of type or model output.
-    has_critical = any(
-        f.get("severity") == "critical"
-        for f in result.get("findings", [])
-    )
-    result["disclaimer"] = get_disclaimer(result.get("report_type"), has_critical=has_critical)
-    result["skipped_pages"] = skipped_pages
-    return result
+    return {
+        "sections": sections,
+        "skipped_pages": skipped_pages,
+    }
+
+
+def _build_section(markers: dict, report_type: str) -> dict:
+    """Categorize and advise one report type's markers into a full section."""
+    findings = categorize(markers, report_type)
+
+    if MOCK_AI:
+        from mock_data import get_mock_advice
+        advice = get_mock_advice(report_type)
+    else:
+        vector_store = load_vector_store()
+        advice = generate_advice(findings, vector_store, report_type)
+
+    has_critical = any(f.get("severity") == "critical" for f in findings)
+
+    return {
+        "report_type": report_type,
+        "findings": findings,
+        "advice": advice,
+        "disclaimer": get_disclaimer(report_type, has_critical=has_critical),
+    }
+
+
+def _build_isolated_section(markers: dict) -> dict:
+    """
+    Lone markers that didn't meet the section threshold. We still categorize them
+    (grouped by their own type) so status/severity show, but present them as
+    low-confidence isolated findings rather than a confident typed report — a
+    single stray marker may be a misread.
+    """
+    all_findings = []
+
+    # Categorize each lone marker against its own type so status/severity are real.
+    groups = group_markers_by_type(markers)
+    groups.pop("unknown", None)
+    for report_type, type_markers in groups.items():
+        all_findings.extend(categorize(type_markers, report_type))
+
+    advice = {
+        "summary": (
+            "These markers appeared on their own, without enough related results "
+            "to form a full report section. They may be incidental or misread, so "
+            "treat them with caution. Please consult a licensed doctor to interpret "
+            "them properly."
+        ),
+        "findings": [],
+    }
+
+    has_critical = any(f.get("severity") == "critical" for f in all_findings)
+
+    return {
+        "report_type": "isolated",
+        "findings": all_findings,
+        "advice": advice,
+        "disclaimer": get_disclaimer(None, has_critical=has_critical),
+    }
 
 
 if __name__ == "__main__":
@@ -218,40 +247,39 @@ if __name__ == "__main__":
     print(f"Analyzing {file_path}...")
     result = analyze_report(file_path)
 
-    print(f"\n--- REPORT TYPE: {result['report_type']} ---")
+    for section in result["sections"]:
+        print(f"\n=== SECTION: {section['report_type']} ===")
 
-    print("\n--- RESULTS ---")
-    for f in result["findings"]:
-        if f["kind"] == "numeric":
-            unit = f.get("unit", "")
-            normal = f["normal_range"] if f["normal_range"] is not None else "N/A"
-            source = f.get("range_source", "data")
-            printed = f.get("printed_range")
-            printed_note = f" [report printed: {printed}]" if printed else ""
-            flag = "  ⚠ CRITICAL" if f.get("severity") == "critical" else ""
-            print(
-                f"{f['name']}: {f['value']} {unit} → {f['status']} "
-                f"({f['severity']}, normal: {normal}, via: {source}){printed_note}{flag}"
-            )
-        elif f["kind"] == "narrative":
-            print(f"[{f['section']}] {f['finding_text']}")
+        print("\n--- RESULTS ---")
+        for f in section["findings"]:
+            if f["kind"] == "numeric":
+                unit = f.get("unit", "")
+                normal = f["normal_range"] if f["normal_range"] is not None else "N/A"
+                source = f.get("range_source", "data")
+                printed = f.get("printed_range")
+                printed_note = f" [report printed: {printed}]" if printed else ""
+                flag = "  ⚠ CRITICAL" if f.get("severity") == "critical" else ""
+                print(
+                    f"{f['name']}: {f['value']} {unit} → {f['status']} "
+                    f"({f['severity']}, normal: {normal}, via: {source}){printed_note}{flag}"
+                )
+            elif f["kind"] == "narrative":
+                print(f"[{f['section']}] {f['finding_text']}")
 
-    print("\n--- PERSONALIZED ADVICE ---")
-    advice = result["advice"]
-    if isinstance(advice, dict):
-        print(advice.get("summary", ""))
-        for item in advice.get("findings", []):
-            print(f"\n• {item.get('name', '')}:")
-            print(f"  {item.get('advice', '')}")
-    else:
-        # Backward-safe: if advice is ever a plain string, print it directly.
-        print(advice)
-    print("\n--- DISCLAIMER ---")
-    print(result.get("disclaimer", ""))
+        advice = section["advice"]
+        print("\n--- ADVICE ---")
+        if isinstance(advice, dict):
+            print(advice.get("summary", ""))
+            for item in advice.get("findings", []):
+                print(f"\n• {item.get('name', '')}:")
+                print(f"  {item.get('advice', '')}")
+        else:
+            print(advice)
+
+        print("\n--- DISCLAIMER ---")
+        print(section.get("disclaimer", ""))
 
     skipped = result.get("skipped_pages", [])
     if skipped:
-        print("\n--- NOTE ---")
         pages = ", ".join(str(p) for p in skipped)
-        print(f"Some pages could not be read and were skipped: page {pages}.")
-        print("The results above are based on the pages that could be read.")
+        print(f"\n--- NOTE ---\nSome pages could not be read and were skipped: page {pages}.")
