@@ -49,3 +49,24 @@ def get_disclaimer(report_type: str = None, has_critical: bool = False) -> str:
             return type_info.get("disclaimer", default)
 
     return default
+
+
+def group_markers_by_type(biomarkers: dict) -> dict:
+    """Group markers by their report type (from report_data.json). Unknown -> 'unknown'."""
+    report_data = _load_report_data()
+
+    # Build a lookup: marker name -> the type it belongs to.
+    marker_to_type = {}
+    for type_key, type_info in report_data.items():
+        if type_key.startswith("_"):
+            continue
+        for marker_name in type_info.get("ranges", {}):
+            marker_to_type[marker_name] = type_key
+
+    # Drop each extracted marker into its type's group.
+    groups = {}
+    for name, data in biomarkers.items():
+        report_type = marker_to_type.get(name, "unknown")
+        groups.setdefault(report_type, {})[name] = data
+
+    return groups
