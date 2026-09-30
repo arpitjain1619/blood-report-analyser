@@ -42,7 +42,11 @@
           "Red Blood Cell Count",
           "Erythrocyte Count",
           "Total RBC Count"
-        ]
+        ],
+        "variants": {
+          "male": { "min": 4.5, "max": 5.9 },
+          "female": { "min": 4.0, "max": 5.2 }
+        }
       },
       "Hemoglobin": {
         "kind": "range",
@@ -51,14 +55,22 @@
         "unit": "g/dL",
         "critical_low": 7.0,
         "critical_high": 20.0,
-        "aliases": ["Hb", "HGB", "Haemoglobin", "Hgb"]
+        "aliases": ["Hb", "HGB", "Haemoglobin", "Hgb"],
+        "variants": {
+          "male": { "min": 13.5, "max": 17.5 },
+          "female": { "min": 12.0, "max": 15.5 }
+        }
       },
       "Hematocrit": {
         "kind": "range",
         "min": 40.0,
         "max": 50.0,
         "unit": "%",
-        "aliases": ["HCT", "PCV", "Packed Cell Volume"]
+        "aliases": ["HCT", "PCV", "Packed Cell Volume"],
+        "variants": {
+          "male": { "min": 41.0, "max": 50.0 },
+          "female": { "min": 36.0, "max": 46.0 }
+        }
       },
       "MCV": {
         "kind": "range",
