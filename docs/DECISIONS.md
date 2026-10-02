@@ -923,3 +923,72 @@ HRA-22) must include resilience before shipping.
 ### Related
 
 DEC-011 (resilience on every AI call), HRA-22 (first likely future AI call).
+
+---
+
+## DEC-023: Narrative findings are explained, not categorized (HRA-21)
+
+### Status
+
+Proposed — pending confirmation by a medical reviewer.
+
+### Context
+
+Numeric markers are categorized by comparing a value to a reference range
+(High/Low/Normal + severity). Narrative reports (e.g. radiology, pathology) have
+no numeric values — they are free-text findings ("mild hepatomegaly noted", "4mm
+nodule in right lobe"). There is nothing to compare against a range, so "how do we
+categorize a narrative finding?" needed a deliberate decision.
+
+### Options Considered
+
+1. **Explain only, no categorization** — extract findings as text, explain them in
+   plain language, assign no status/severity; significance is left to the doctor.
+2. **Coarse signal** — the app assigns a rough routine/attention signal to each
+   finding (either AI-inferred, or derived from the report's own wording).
+3. **Neutral presentation** — show findings with a strong "requires professional
+   interpretation" note and no assessment at all.
+
+### Decision
+
+Option 1 — **explain, don't judge.** Narrative findings are extracted and
+explained in plain, educational language (using the existing RAG approach to
+describe what terms mean), but are assigned **no status and no severity**. The app
+does not decide whether a narrative finding is concerning; that judgment is
+explicitly left to a licensed doctor.
+
+### Reason
+
+- Deciding whether a narrative finding is concerning is clinical judgment — exactly
+  what this tool avoids everywhere else (the "unknown" short-circuit, "unassessed"
+  severity, conservative critical thresholds). Making significance calls on
+  free-text radiology/pathology — the highest-stakes report type — would be the
+  riskiest possible place to start interpreting.
+- A narrative report is already written by a specialist for a doctor to read. The
+  tool's honest value is **explaining the terminology in plain language**, not
+  re-judging the specialist's findings.
+- This keeps the status/severity/critical machinery for numeric markers only, where
+  it is defensible.
+
+### Consequences
+
+#### Positive
+
+- Safest posture for the highest-stakes report type; consistent with the project's
+  "don't assert what you can't justify" principle.
+- Simplifies narrative support (HRA-22/23): no severity logic needed for narrative
+  findings.
+
+#### Negative
+
+- The user does not get an at-a-glance "should I worry" signal for narrative
+  findings — they must rely on their doctor (which is the intended, safe behavior).
+- A report-derived signal (echoing the radiologist's own stated impression) was
+  considered and may be revisited later if the medical reviewer supports it.
+
+### Related
+
+HRA-22 (narrative extraction), HRA-23 (narrative support end-to-end), HRA-24
+(medical review gate — this decision should be confirmed there). Consistent with
+DEC-003 (rule-based over AI), the critical-value calibration (HRA-15), and the
+overall non-diagnostic safety framing.
