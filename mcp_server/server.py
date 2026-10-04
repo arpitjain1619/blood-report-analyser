@@ -12,9 +12,10 @@ from core.pipeline import analyze_report
 
 BACKEND_BASE_URL = os.getenv("BACKEND_API_URL", "http://127.0.0.1:8001")
 
-mcp = FastMCP("Health Report Analyser")
+mcp = FastMCP("Health Report Analyzer")
+
 @mcp.tool
-def analyze_blood_report(file_url: str) -> dict:
+def analyze_health_report(file_url: str) -> dict:
     """
     Analyzes a health lab report (image or PDF) and returns structured,
     non-diagnostic educational guidance grounded in a curated knowledge base.

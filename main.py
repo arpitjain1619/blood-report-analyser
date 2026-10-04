@@ -12,7 +12,7 @@ from mcp_server.server import mcp as mcp_server_instance
 # the main FastAPI app at creation time, or session handling breaks.
 mcp_app = mcp_server_instance.http_app(path="/")
 
-app = FastAPI(title="Blood Report Analyser API", lifespan=mcp_app.lifespan)
+app = FastAPI(title="Health Report Analyzer API", lifespan=mcp_app.lifespan)
 
 # Mount the MCP server at /mcp — same external URL shape as before
 # (http://host/mcp), just now living inside the same process/port
@@ -35,7 +35,7 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"status": "Blood Report Analyser API is running"}
+    return {"status": "Health Report Analyzer API is running"}
 
 
 @app.post("/analyze-report")
