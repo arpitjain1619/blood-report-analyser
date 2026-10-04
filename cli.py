@@ -1,5 +1,5 @@
 import sys
-from pipeline import analyze_report
+from core.pipeline import analyze_report
 
 
 def main():

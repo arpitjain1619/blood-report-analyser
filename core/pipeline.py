@@ -1,12 +1,12 @@
 import os
 from dotenv import load_dotenv
-from categorize import categorize
-from retriever import load_vector_store
-from advisor import generate_advice
+from core.categorize import categorize
+from rag.retriever import load_vector_store
+from core.advisor import generate_advice
 from name_resolver import resolve_biomarkers
-from detector import group_markers_by_type
-from disclaimer import get_disclaimer
-from extractor import extract_biomarkers, _extract_biomarkers_from_pdf
+from core.detector import group_markers_by_type
+from data.disclaimer import get_disclaimer
+from core.extractor import extract_biomarkers, _extract_biomarkers_from_pdf
 
 load_dotenv()
 
@@ -86,7 +86,7 @@ def _build_section(markers: dict, report_type: str, sex: str = None) -> dict:
     findings = categorize(markers, report_type, sex=sex)
 
     if MOCK_AI:
-        from mock_data import get_mock_advice
+        from data.mock_data import get_mock_advice
         advice = get_mock_advice(report_type)
     else:
         vector_store = load_vector_store()

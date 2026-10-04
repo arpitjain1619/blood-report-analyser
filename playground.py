@@ -1,4 +1,4 @@
-from retriever import load_vector_store, retrieve_relevant_chunks
+from rag.retriever import load_vector_store, retrieve_relevant_chunks
 
 vector_store = load_vector_store()
 

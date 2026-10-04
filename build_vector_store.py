@@ -1,8 +1,8 @@
 import json
 import time
-from load_articles import load_articles
-from chunker import chunk_text
-from embedder import embed_text
+from rag.load_articles import load_articles
+from rag.chunker import chunk_text
+from rag.embedder import embed_text
 
 def build_vector_store(output_path: str = "vector_store.json"):
     articles = load_articles()
