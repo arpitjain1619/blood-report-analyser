@@ -2,8 +2,8 @@ import os
 import time
 from dotenv import load_dotenv
 from anthropic import Anthropic
-from retriever import retrieve_relevant_chunks
-from json_utils import extract_json
+from rag.retriever import retrieve_relevant_chunks
+from utils.json_utils import extract_json
 
 load_dotenv()
 

@@ -5,7 +5,7 @@ import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from pipeline import analyze_report
+from core.pipeline import analyze_report
 from mcp_server.server import mcp as mcp_server_instance
 
 # Build the MCP sub-app first — its lifespan needs to be wired into

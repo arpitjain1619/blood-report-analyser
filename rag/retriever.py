@@ -1,6 +1,6 @@
 import json
 import numpy as np
-from embedder import embed_text
+from rag.embedder import embed_text
 
 
 def load_vector_store(path: str = "vector_store.json") -> list:

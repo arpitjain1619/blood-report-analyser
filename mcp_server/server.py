@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import tempfile
 from fastmcp import FastMCP
-from pipeline import analyze_report
+from core.pipeline import analyze_report
 
 BACKEND_BASE_URL = os.getenv("BACKEND_API_URL", "http://127.0.0.1:8001")
 

@@ -2,8 +2,8 @@ import base64
 import os
 from dotenv import load_dotenv
 from anthropic import Anthropic
-from pdf_utils import pdf_to_images
-from json_utils import extract_json
+from utils.pdf_utils import pdf_to_images
+from utils.json_utils import extract_json
 
 load_dotenv()
 
@@ -21,7 +21,7 @@ VISION_MODELS = [
 
 def extract_biomarkers(image_path: str, max_retries_per_model: int = 1) -> tuple:
     if MOCK_AI:
-        from mock_data import get_mock_biomarkers
+        from data.mock_data import get_mock_biomarkers
         mock_report = os.getenv("MOCK_REPORT", "blood")
         print(f"[MOCK_AI] Skipping real vision call, returning mock '{mock_report}' biomarkers.")
         return get_mock_biomarkers(mock_report), None

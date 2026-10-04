@@ -1,7 +1,7 @@
 import json
 import os
 
-_REPORT_DATA_PATH = os.path.join(os.path.dirname(__file__), "report_data.json")
+_REPORT_DATA_PATH = os.path.join("data", "report_data.json")
 
 
 def _load_report_data(path: str = _REPORT_DATA_PATH) -> dict:
